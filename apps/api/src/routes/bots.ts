@@ -406,6 +406,14 @@ export function botsRoutes(ctx: RouterContext) {
           current: { provider: existing.modelProvider, model: existing.modelId },
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
+        if (input.userDeviceId) {
+          const owned = await deps.prisma.userDevice.findFirst({
+            where: { id: input.userDeviceId, userId: context.actor.userId, revokedAt: null },
+            select: { id: true },
+          });
+          if (!owned)
+            throw new ORPCError("BAD_REQUEST", { message: "Choose one of your computers" });
+        }
         const thinkingLevel = input.thinkingLevel;
         if (!existing.thread) throw new IsolationError();
         // Picking a set on one bot pins it unless it is the owner's default, which unpins it.
@@ -461,6 +469,7 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.disabledBuiltinTools !== undefined
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),
+            ...(input.userDeviceId !== undefined ? { userDeviceId: input.userDeviceId } : {}),
           },
         }).catch((error) => {
           if (input.expectedSettings && isRecordNotFound(error))

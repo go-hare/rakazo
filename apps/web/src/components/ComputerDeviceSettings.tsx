@@ -1,11 +1,20 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
-import { Button, Label, Switch } from "@rakazo/ui-web";
+import type { Bot, RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
+import {
+  Button,
+  Field,
+  FieldLabel,
+  Input,
+  Label,
+  NativeSelect,
+  NativeSelectOption,
+  Switch,
+} from "@rakazo/ui-web";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
 import { rpc } from "../lib/rpc";
-import { listUserDevices, removeUserDevice } from "../lib/user-devices";
+import { listUserDevices, pairUserDevice, removeUserDevice } from "../lib/user-devices";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
 type ThisComputer = { allowed: boolean; setAllowed: (allowed: boolean) => Promise<unknown> };
@@ -34,16 +43,22 @@ export function ComputerDeviceSettings() {
   const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [paired, setPaired] = useState<{ token: string } | null>(null);
+  const [bots, setBots] = useState<Bot[]>([]);
   const switchId = useId();
+  const nameId = useId();
 
   const load = useCallback(async () => {
-    const [listed, local] = await Promise.all([
+    const [listed, local, listedBots] = await Promise.all([
       listUserDevices().catch(() => null),
       // A failed profile read keeps the last known switch rather than hiding it.
       thisComputerAccess(desktop).catch(() => undefined),
+      rpc.bots.list().catch(() => null),
     ]);
     if (listed) setDevices(listed);
     if (local !== undefined) setThisComputer(local);
+    if (listedBots) setBots(listedBots);
   }, [desktop]);
 
   useEffect(() => {
@@ -63,7 +78,9 @@ export function ComputerDeviceSettings() {
     }
   }
 
-  if (devices.length === 0 && !thisComputer) return null;
+  const command = paired
+    ? `node host-computer.js --server ${location.origin} --token ${paired.token} --root /var/lib/rakazo`
+    : "";
 
   return (
     <SettingsGroup title={<Trans>Computers</Trans>} data-testid="computer-devices">
@@ -112,6 +129,67 @@ export function ComputerDeviceSettings() {
           }
         />
       ))}
+      <form
+        className="grid gap-2 px-4 py-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const trimmed = name.trim();
+          if (!trimmed) return;
+          void run(async () => {
+            const created = await pairUserDevice(trimmed);
+            setPaired({ token: created.token });
+            setName("");
+          }, t`Could not add`);
+        }}
+      >
+        <Field>
+          <FieldLabel htmlFor={nameId}>
+            <Trans>Name</Trans>
+          </FieldLabel>
+          <Input
+            id={nameId}
+            value={name}
+            maxLength={128}
+            disabled={pending}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        <Button type="submit" size="sm" disabled={pending || !name.trim()}>
+          <Trans>Add machine</Trans>
+        </Button>
+      </form>
+      {devices.length > 1
+        ? bots.map((bot) => (
+            <SettingsRow
+              key={bot.id}
+              label={<span className="truncate">{bot.name}</span>}
+              control={
+                <NativeSelect
+                  aria-label={t`${bot.name} runs on`}
+                  value={bot.userDeviceId ?? ""}
+                  disabled={pending}
+                  onChange={(event) => {
+                    const userDeviceId = event.target.value || null;
+                    void run(
+                      () => rpc.bots.update({ botId: bot.id, userDeviceId }),
+                      t`Could not change`,
+                    );
+                  }}
+                >
+                  <NativeSelectOption value="">{t`Most recently connected`}</NativeSelectOption>
+                  {devices.map((device) => (
+                    <NativeSelectOption key={device.deviceId} value={device.deviceId}>
+                      {device.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              }
+            />
+          ))
+        : null}
+      {paired ? (
+        <p className="px-4 pb-3 text-body-sm break-all text-muted-foreground">{command}</p>
+      ) : null}
       {error ? (
         <p role="alert" className="px-4 py-3 text-body-sm text-destructive">
           {error}

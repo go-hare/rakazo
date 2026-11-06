@@ -141,6 +141,11 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr "{0} toplama saatleri"
 
+#. placeholder {0}: bot.name
+#: src/components/ComputerDeviceSettings.tsx
+msgid "{0} runs on"
+msgstr ""
+
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
@@ -634,6 +639,10 @@ msgstr "Üstbilgi ekle"
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Öğe ekle"
+
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Add machine"
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1940,6 +1949,8 @@ msgstr "Satırları kopyala"
 msgid "Cost"
 msgstr "Maliyet"
 
+#: src/components/ComputerDeviceSettings.tsx
+#: src/lib/user-devices.ts
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "Eklenemedi"
@@ -4328,6 +4339,10 @@ msgstr "Daha fazla uygulama"
 msgid "More computer actions"
 msgstr "Diğer bilgisayar işlemleri"
 
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Most recently connected"
+msgstr ""
+
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
 msgstr "Aşağı taşı"
@@ -4356,6 +4371,7 @@ msgstr "Sessiz"
 msgid "My computers"
 msgstr "Bilgisayarlarım"
 
+#: src/components/ComputerDeviceSettings.tsx
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -5447,6 +5463,10 @@ msgstr "{secretName} kaldırılsın mı? Botlar artık bunu kullanamayacak."
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Remove {site}"
 msgstr "Kaldır: {site}"
+
+#: src/lib/user-devices.ts
+msgid "Remove a computer before adding another"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"

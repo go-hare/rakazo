@@ -109,6 +109,7 @@ function mapBot(
     dailyCheckIns?: boolean;
     fleetManagement?: boolean;
     disabledBuiltinTools?: string[];
+    userDeviceId?: string | null;
     webhookSecretId?: string | null;
     spawnKey?: string | null;
   },
@@ -157,6 +158,7 @@ function mapBot(
     fleetManagement: bot.fleetManagement ?? true,
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
+    userDeviceId: bot.userDeviceId ?? null,
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
     incomingCall,

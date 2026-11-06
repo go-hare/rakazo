@@ -142,6 +142,11 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr "{0} 彙整時數"
 
+#. placeholder {0}: bot.name
+#: src/components/ComputerDeviceSettings.tsx
+msgid "{0} runs on"
+msgstr ""
+
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
@@ -635,6 +640,10 @@ msgstr "新增標頭"
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "新增項目"
+
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Add machine"
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1941,6 +1950,8 @@ msgstr "複製列"
 msgid "Cost"
 msgstr "費用"
 
+#: src/components/ComputerDeviceSettings.tsx
+#: src/lib/user-devices.ts
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "無法新增"
@@ -4329,6 +4340,10 @@ msgstr "更多應用程式"
 msgid "More computer actions"
 msgstr "更多電腦操作"
 
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Most recently connected"
+msgstr ""
+
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
 msgstr "下移"
@@ -4357,6 +4372,7 @@ msgstr "已靜音"
 msgid "My computers"
 msgstr ""
 
+#: src/components/ComputerDeviceSettings.tsx
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -5448,6 +5464,10 @@ msgstr "要移除 {secretName} 嗎？機器人將無法再使用它。"
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Remove {site}"
 msgstr "移除 {site}"
+
+#: src/lib/user-devices.ts
+msgid "Remove a computer before adding another"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"

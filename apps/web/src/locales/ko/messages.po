@@ -141,6 +141,11 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr ""
 
+#. placeholder {0}: bot.name
+#: src/components/ComputerDeviceSettings.tsx
+msgid "{0} runs on"
+msgstr ""
+
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
@@ -634,6 +639,10 @@ msgstr "헤더 추가"
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "항목 추가"
+
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Add machine"
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1940,6 +1949,8 @@ msgstr "행 복사"
 msgid "Cost"
 msgstr "비용"
 
+#: src/components/ComputerDeviceSettings.tsx
+#: src/lib/user-devices.ts
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "추가하지 못했습니다."
@@ -4328,6 +4339,10 @@ msgstr ""
 msgid "More computer actions"
 msgstr "컴퓨터 작업 더보기"
 
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Most recently connected"
+msgstr ""
+
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
 msgstr "아래로 이동"
@@ -4356,6 +4371,7 @@ msgstr ""
 msgid "My computers"
 msgstr ""
 
+#: src/components/ComputerDeviceSettings.tsx
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -5447,6 +5463,10 @@ msgstr "{secretName}을(를) 제거할까요? 봇이 더 이상 사용할 수 �
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Remove {site}"
 msgstr "{site} 삭제"
+
+#: src/lib/user-devices.ts
+msgid "Remove a computer before adding another"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"

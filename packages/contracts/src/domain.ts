@@ -138,6 +138,7 @@ export const BotSchema = z.object({
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
   disabledBuiltinTools: z.array(z.string()).default([]),
+  userDeviceId: z.string().nullable().default(null),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
   spawnKey: z.string().nullable(),
@@ -499,6 +500,7 @@ export const UpdateBotInput = z
     dailyCheckIns: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
+    userDeviceId: z.string().nullable().optional(),
     /** Write only while these settings still hold, as an undo does. */
     expectedSettings: BotSettingsValuesSchema.optional(),
   })

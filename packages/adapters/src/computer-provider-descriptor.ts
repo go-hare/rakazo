@@ -13,6 +13,20 @@ export interface SettingsComputerProvider extends ComputerProviderDescriptor {
   verifyConnection?(values: Record<string, string>, signal: AbortSignal): Promise<void>;
 }
 
+/** A connection the server can reach: public HTTPS, no credentials or fragment. */
+export function requirePublicHttpsUrl(value: string, label: string) {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password || url.hash)
+    throw new Error(`${label} must be an HTTPS URL without credentials or fragment`);
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (
+    isInternalHostname(host) ||
+    isCloudMetadataHost(host) ||
+    (ipVersion(host) && isNonPublicAddress(host))
+  )
+    throw new Error(`${label} must use a public address`);
+}
+
 /** Env and Settings share the factory's option mapping and constructors. */
 export function defineComputerProvider(
   descriptor: ComputerProviderDescriptor,
@@ -36,18 +50,7 @@ export function defineComputerProvider(
         const value = values[field.key]?.trim() ?? "";
         if (field.required && !value) throw new Error(`${field.label} is required`);
         if (value.length > 4096) throw new Error(`${field.label} is too long`);
-        if (value && field.kind === "url") {
-          const url = new URL(value);
-          if (url.protocol !== "https:" || url.username || url.password || url.hash)
-            throw new Error(`${field.label} must be an HTTPS URL without credentials or fragment`);
-          const host = url.hostname.replace(/^\[|\]$/g, "");
-          if (
-            isInternalHostname(host) ||
-            isCloudMetadataHost(host) ||
-            (ipVersion(host) && isNonPublicAddress(host))
-          )
-            throw new Error(`${field.label} must use a public address`);
-        }
+        if (value && field.kind === "url") requirePublicHttpsUrl(value, field.label);
         if (
           field.kind === "select" &&
           value &&

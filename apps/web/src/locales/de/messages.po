@@ -141,6 +141,11 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr ""
 
+#. placeholder {0}: bot.name
+#: src/components/ComputerDeviceSettings.tsx
+msgid "{0} runs on"
+msgstr ""
+
 #. placeholder {0}: parts.amount
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} TB"
@@ -634,6 +639,10 @@ msgstr "Header hinzufügen"
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Element hinzufügen"
+
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Add machine"
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1940,6 +1949,8 @@ msgstr "Zeilen kopieren"
 msgid "Cost"
 msgstr "Kosten"
 
+#: src/components/ComputerDeviceSettings.tsx
+#: src/lib/user-devices.ts
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "Hinzufügen fehlgeschlagen"
@@ -4328,6 +4339,10 @@ msgstr ""
 msgid "More computer actions"
 msgstr ""
 
+#: src/components/ComputerDeviceSettings.tsx
+msgid "Most recently connected"
+msgstr ""
+
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
 msgstr "Nach unten"
@@ -4356,6 +4371,7 @@ msgstr "Stummgeschaltet"
 msgid "My computers"
 msgstr ""
 
+#: src/components/ComputerDeviceSettings.tsx
 #: src/components/CreateOrganizationDialog.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/components/vault/VaultItemEditor.tsx
@@ -5447,6 +5463,10 @@ msgstr "{secretName} entfernen? Bots können es dann nicht mehr verwenden."
 #: src/components/TrustedLinkSitesSettings.tsx
 msgid "Remove {site}"
 msgstr "{site} entfernen"
+
+#: src/lib/user-devices.ts
+msgid "Remove a computer before adding another"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"

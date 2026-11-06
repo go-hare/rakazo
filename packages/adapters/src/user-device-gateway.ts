@@ -33,7 +33,8 @@ export const USER_DEVICE_OFFLINE_MESSAGE =
   "Your computer is not connected. Open the Rakazo desktop app.";
 const DISCONNECTED_MESSAGE = "Your computer disconnected. Check the result before retrying.";
 const REVOKED_MESSAGE = "This computer was disconnected from Rakazo.";
-export const USER_DEVICE_LIMIT = 10;
+/** One account can pair a home computer, an office computer, and a fleet of machines. */
+export const USER_DEVICE_LIMIT = 50;
 const PING_INTERVAL_MS = 25_000;
 /** A connection row older than this has lost its holding process. */
 const STALE_AFTER_MS = 3 * PING_INTERVAL_MS;
@@ -537,8 +538,8 @@ export class UserDevices implements UserDeviceGateway {
     this.fetch = deps.fetch ?? fetch;
   }
 
-  async connected(userId: string): Promise<UserDevice | null> {
-    const route = await this.route(userId);
+  async connected(userId: string, deviceId?: string): Promise<UserDevice | null> {
+    const route = await this.route(userId, deviceId);
     return route && { deviceId: route.deviceId, name: route.name, platform: route.platform };
   }
 

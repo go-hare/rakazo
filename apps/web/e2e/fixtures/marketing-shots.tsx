@@ -96,6 +96,7 @@ function inboxBot(): Bot {
     runErrorId: null,
     fleetManagement: true,
     disabledBuiltinTools: [],
+    userDeviceId: null,
   };
 }
 

@@ -3,8 +3,8 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { startHostComputerServer } from "@rakazo/adapters/host-computer-server";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
-import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
 import type {
   DesktopMenuCommand,
   DesktopReachability,
@@ -1415,7 +1415,8 @@ app.whenReady().then(async () => {
         bypassCustomProtocolHandlers: true,
       }),
     connect: (origin, token, events) =>
-      startUserDeviceClient({
+      startHostComputerServer({
+        mode: "connect",
         serverUrl: origin,
         token,
         root: path.join(userDataDir, "computers"),

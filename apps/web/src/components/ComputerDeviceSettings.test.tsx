@@ -21,6 +21,13 @@ vi.mock("@rakazo/ui-web", () => ({
     size: _size,
     ...props
   }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
+  Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
+    <label htmlFor={htmlFor}>{children}</label>
+  ),
+  Input: (props: ComponentProps<"input">) => <input {...props} />,
+  NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
+  NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
@@ -39,8 +46,14 @@ vi.mock("@rakazo/ui-web", () => ({
     />
   ),
 }));
-vi.mock("../lib/user-devices", () => ({ listUserDevices: vi.fn(), removeUserDevice: vi.fn() }));
-vi.mock("../lib/rpc", () => ({ rpc: { me: vi.fn() } }));
+vi.mock("../lib/user-devices", () => ({
+  listUserDevices: vi.fn(),
+  pairUserDevice: vi.fn(),
+  removeUserDevice: vi.fn(),
+}));
+vi.mock("../lib/rpc", () => ({
+  rpc: { me: vi.fn(), bots: { list: vi.fn(async () => []), update: vi.fn() } },
+}));
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -65,10 +78,25 @@ function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
   window.rakazoDesktop = { platform: "darwin", device } as RakazoDesktop;
 }
 
-it("stays hidden without any computer", async () => {
+it("offers to add a machine when none is paired", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([]);
   await act(async () => root.render(<ComputerDeviceSettings />));
-  expect(host.innerHTML).toBe("");
+  expect(host.textContent).toContain("Add machine");
+  expect(host.querySelector("button")?.hasAttribute("disabled")).toBe(true);
+});
+
+it("saves which computer a bot runs on", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([laptop, desk]);
+  vi.mocked(rpc.bots.list).mockResolvedValue([
+    { id: "bot-1", name: "Scout", userDeviceId: null },
+  ] as Awaited<ReturnType<typeof rpc.bots.list>>);
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  const select = host.querySelector("select");
+  expect(select?.getAttribute("aria-label")).toBe("Scout runs on");
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(select, "d2");
+  select?.dispatchEvent(new Event("change", { bubbles: true }));
+  await act(async () => {});
+  expect(rpc.bots.update).toHaveBeenCalledWith({ botId: "bot-1", userDeviceId: "d2" });
 });
 
 it("lists computers with their status and removes one", async () => {
@@ -77,7 +105,7 @@ it("lists computers with their status and removes one", async () => {
   await act(async () => root.render(<ComputerDeviceSettings />));
   expect(host.textContent).toContain("LaptopConnected");
   expect(host.textContent).toContain("Desk PCOffline");
-  expect(host.querySelector("input")).toBeNull();
+  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
 
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC"]')?.click(),
@@ -188,7 +216,8 @@ it("stays hidden on a server that does not run bots on this computer", async () 
     device: { state: async () => null },
   } as unknown as RakazoDesktop;
   await act(async () => root.render(<ComputerDeviceSettings />));
-  expect(host.innerHTML).toBe("");
+  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+  expect(host.textContent).toContain("Add machine");
 });
 
 it("keeps the local switch when a later profile read fails", async () => {

@@ -183,6 +183,7 @@ model UserDevice {
   /// Who revoked it: "owner", "device" or "session" (its sign-in ended). Null when unknown.
   revokedBy   String?
   connections UserDeviceConnection[]
+  bots        Bot[]
 
   @@index([userId, revokedAt])
   @@map("user_devices")
@@ -942,6 +943,9 @@ model Bot {
   modelId           String?
   thinkingLevel     String?
   disabledBuiltinTools String[] @default([])
+  /// The paired machine this bot runs on. Null uses the most recently connected one.
+  userDeviceId      String?
+  userDevice        UserDevice?       @relation(fields: [userDeviceId], references: [id], onDelete: SetNull)
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")

@@ -3,14 +3,69 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { HOST_COMPUTER_MAX_BYTES } from "./host-computer-protocol.js";
 import { createHostComputerRunner } from "./host-computer-runner.js";
+import type { HostScreen } from "./host-screen.js";
+import type { UserDeviceClientOptions } from "./user-device-client.js";
+import { startUserDeviceClient } from "./user-device-client.js";
 
-/** No renderer receives the credential. Docker reaches this listener through its host gateway. */
-export async function startHostComputerServer(options: {
+export interface HostComputerListenOptions {
+  mode?: "listen";
   root: string;
   token: string;
   port?: number;
   hostname?: string;
-}) {
+}
+
+export interface HostComputerConnectOptions {
+  mode: "connect";
+  root: string;
+  token: string;
+  serverUrl: string;
+  screen?: HostScreen;
+  onRevoked: UserDeviceClientOptions["onRevoked"];
+  authorize: UserDeviceClientOptions["authorize"];
+}
+
+/**
+ * One host computer, started either way. `listen` waits for the server to connect in; the desktop
+ * app uses it for the machine it runs on. `connect` dials the server and never opens a port, so a
+ * machine behind a router can run it on its own. Both hand every request to the same runner.
+ */
+export function startHostComputerServer(options: HostComputerConnectOptions): HostComputerConnection;
+export function startHostComputerServer(
+  options: HostComputerListenOptions,
+): Promise<HostComputerListener>;
+export function startHostComputerServer(
+  options: HostComputerListenOptions | HostComputerConnectOptions,
+): HostComputerConnection | Promise<HostComputerListener> {
+  if (options.mode === "connect") return connectHostComputer(options);
+  return listenHostComputer(options);
+}
+
+export interface HostComputerConnection {
+  close(): void;
+  cancelAll(): void;
+}
+
+export interface HostComputerListener {
+  port: number;
+  isEnabled: () => boolean;
+  setEnabled: (value: boolean) => void;
+  close(): Promise<void>;
+}
+
+function connectHostComputer(options: HostComputerConnectOptions) {
+  return startUserDeviceClient({
+    serverUrl: options.serverUrl,
+    token: options.token,
+    root: options.root,
+    screen: options.screen,
+    onRevoked: options.onRevoked,
+    authorize: options.authorize,
+  });
+}
+
+/** No renderer receives the credential. Docker reaches this listener through its host gateway. */
+async function listenHostComputer(options: HostComputerListenOptions) {
   if (!/^[a-f0-9]{64}$/.test(options.token)) throw new Error("Invalid local computer credential");
   const runner = createHostComputerRunner({ root: options.root });
   const secret = Buffer.from(`Bearer ${options.token}`);

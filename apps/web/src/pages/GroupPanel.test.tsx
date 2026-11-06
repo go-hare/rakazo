@@ -104,6 +104,7 @@ function fakeBot(id: string, name: string): Bot {
     teamChatAmbientEnabled: false,
     teamChatRules: "",
     disabledBuiltinTools: [],
+    userDeviceId: null,
     webhookConfigured: false,
     fleetManagement: false,
     spawnKey: null,
