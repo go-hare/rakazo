@@ -108,6 +108,7 @@ function mapBot(
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     fleetManagement?: boolean;
+    replyMode?: string;
     disabledBuiltinTools?: string[];
     userDeviceId?: string | null;
     webhookSecretId?: string | null;
@@ -156,6 +157,7 @@ function mapBot(
     crossSpaceCommunication: bot.crossSpaceCommunication ?? true,
     dailyCheckIns: bot.dailyCheckIns ?? true,
     fleetManagement: bot.fleetManagement ?? true,
+    replyMode: bot.replyMode === "messages" ? "messages" : "chat",
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     userDeviceId: bot.userDeviceId ?? null,
@@ -516,6 +518,7 @@ export function createRepos(
         notifyOnFinish: boolean;
         dailyCheckIns?: boolean;
         fleetManagement?: boolean;
+        replyMode?: string;
         color?: string;
         avatarSet?: BotAvatarSet;
         /** Copy a pin as is (duplicates); otherwise a set other than the default pins the bot. */
@@ -615,6 +618,7 @@ export function createRepos(
               notifyOnFinish: input.notifyOnFinish,
               dailyCheckIns: input.dailyCheckIns,
               fleetManagement: input.fleetManagement,
+              replyMode: input.replyMode,
               color: avatar.color,
               avatarSet,
               avatarSetPinned: input.avatarSetPinned ?? avatarSet !== defaultSet,
