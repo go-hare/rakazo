@@ -1,12 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostComputerFrame } from "./host-computer-protocol.js";
-import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import type { HostComputerFrame } from "./protocol.ts";
+import { hostComputerDeadlineMs } from "./protocol.ts";
+import type { HostScreen } from "./screen.ts";
+import { HostScreenError } from "./screen.ts";
 import { createHostComputerRunner } from "./host-computer-runner.js";
-import type { HostScreen } from "./host-screen.js";
-import { HostScreenError } from "./host-screen.js";
 
 const observation = { app: "TextEdit", tree: "- [0] AXWindow" };
 

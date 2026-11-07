@@ -21,7 +21,7 @@ import { win32NtRelativeAvailable } from "./desktop-sandbox-win32-path.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
-import { startHostComputerServer } from "./host-computer-server.js";
+import { startHostComputerServer } from "../../../host-computer/src/host-computer-server.ts";
 import { nativeShellCommandArgv } from "./native-shell.js";
 
 const context = {

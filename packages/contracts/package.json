@@ -20,6 +20,21 @@
       "development": "./src/network-host.ts",
       "default": "./src/network-host.ts"
     },
+    "./host-computer-protocol": {
+      "types": "./src/host-computer-protocol.ts",
+      "development": "./src/host-computer-protocol.ts",
+      "default": "./src/host-computer-protocol.ts"
+    },
+    "./host-screen": {
+      "types": "./src/host-screen.ts",
+      "development": "./src/host-screen.ts",
+      "default": "./src/host-screen.ts"
+    },
+    "./user-device-protocol": {
+      "types": "./src/user-device-protocol.ts",
+      "development": "./src/user-device-protocol.ts",
+      "default": "./src/user-device-protocol.ts"
+    },
     "./user-devices": {
       "types": "./src/user-devices.ts",
       "development": "./src/user-devices.ts",

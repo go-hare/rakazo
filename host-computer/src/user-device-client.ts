@@ -1,17 +1,19 @@
-import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
-import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import WebSocket from "ws";
-import type { HostComputerFrame } from "./host-computer-protocol.js";
-import { HOST_COMPUTER_MAX_BYTES } from "./host-computer-protocol.js";
+import { USER_DEVICE_CONNECT_PATH } from "./paths.ts";
+import type { HostComputerFrame } from "./protocol.ts";
+import { HOST_COMPUTER_MAX_BYTES } from "./protocol.ts";
+import type { HostScreen } from "./screen.ts";
 import type { HostComputerCall } from "./host-computer-runner.js";
 import { createHostComputerRunner } from "./host-computer-runner.js";
-import type { HostScreen } from "./host-screen.js";
-import type { UserDeviceClientMessage, UserDeviceRevokeReason } from "./user-device-protocol.js";
+import type {
+  UserDeviceClientMessage,
+  UserDeviceRevokeReason,
+} from "./device-protocol.ts";
 import {
   USER_DEVICE_REVOKED_HEADER,
   userDeviceRevokeReason,
   userDeviceServerMessage,
-} from "./user-device-protocol.js";
+} from "./device-protocol.ts";
 
 /** One frame or request plus its small envelope, in either direction. */
 export const USER_DEVICE_MAX_MESSAGE_BYTES = HOST_COMPUTER_MAX_BYTES + 4096;
@@ -37,9 +39,23 @@ export interface UserDeviceClientOptions {
  * connects in. Runs only while started; `close` stops every command and the connection, and
  * `cancelAll` stops every command and refuses requests still waiting on `authorize`.
  */
+async function refusal(serverUrl: string, token: string): Promise<{ reason?: string } | undefined> {
+  const response = await fetch(new URL(USER_DEVICE_CONNECT_PATH, serverUrl), {
+    method: "GET",
+    headers: { authorization: `Bearer ${token}` },
+  }).catch(() => undefined);
+  if (response?.status !== 401) return undefined;
+  return {
+    reason: userDeviceRevokeReason.safeParse(response.headers.get(USER_DEVICE_REVOKED_HEADER)).data,
+  };
+}
+
 export function startUserDeviceClient(options: UserDeviceClientOptions) {
-  if (secureHttpOrigin(options.serverUrl) === null)
+  const origin = new URL(options.serverUrl);
+  const local = origin.hostname === "localhost" || origin.hostname === "127.0.0.1";
+  if (origin.protocol !== "https:" && !(origin.protocol === "http:" && local)) {
     throw new Error("Local computer access requires HTTPS or loopback");
+  }
   const retry = options.retryMs ?? { min: 1_000, max: 60_000 };
   const runner = createHostComputerRunner({ root: options.root, screen: options.screen });
   runner.setEnabled(true);
@@ -81,8 +97,13 @@ export function startUserDeviceClient(options: UserDeviceClientOptions) {
     reconnectTimer.unref();
   }
 
-  function connect() {
+  async function connect() {
     if (stopped) return;
+    const refused = await refusal(options.serverUrl, options.token);
+    if (refused) {
+      revoked(refused.reason);
+      return;
+    }
     const ws = new WebSocket(url, {
       headers: { authorization: `Bearer ${options.token}` },
       maxPayload: USER_DEVICE_MAX_MESSAGE_BYTES,
@@ -147,6 +168,10 @@ export function startUserDeviceClient(options: UserDeviceClientOptions) {
     ws.on("message", (data, isBinary) => {
       alive = true;
       if (isBinary) return;
+      if (Buffer.byteLength(data.toString()) > USER_DEVICE_MAX_MESSAGE_BYTES) {
+        ws.close();
+        return;
+      }
       let message: ReturnType<typeof userDeviceServerMessage.parse>;
       try {
         const parsed = userDeviceServerMessage.safeParse(JSON.parse(data.toString()));

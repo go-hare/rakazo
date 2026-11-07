@@ -1,11 +1,12 @@
 import { hostname } from "node:os";
-import { startHostComputerServer } from "../host-computer-server.js";
+import { startHostComputerServer } from "./host-computer-server.ts";
+import { linuxScreen } from "./screen-linux.ts";
 
 /**
- * Runs this machine as a host computer that dials a Rakazo server. No port is opened, so it works
- * on a machine the server cannot reach. The desktop app starts the same server itself.
+ * One machine, one file. It dials a Rakazo server and never opens a port, so it runs on a machine
+ * the server cannot reach. The desktop app starts the same server itself.
  *
- *   node host-computer.js --server https://app.example.com --token <token> --root /var/lib/rakazo
+ *   host-computer --server https://app.example.com --token <token> --root /var/lib/rakazo
  */
 const args = new Map<string, string>();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -27,6 +28,7 @@ const host = startHostComputerServer({
   serverUrl,
   token,
   root,
+  screen: process.platform === "linux" ? linuxScreen() : undefined,
   authorize: async () => true,
   onRevoked: () => {
     process.stderr.write(`${hostname()} was disconnected from the server.\n`);

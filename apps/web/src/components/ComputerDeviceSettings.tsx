@@ -79,7 +79,7 @@ export function ComputerDeviceSettings() {
   }
 
   const command = paired
-    ? `node host-computer.js --server ${location.origin} --token ${paired.token} --root /var/lib/rakazo`
+    ? `host-computer --server ${location.origin} --token ${paired.token} --root /var/lib/rakazo`
     : "";
 
   return (

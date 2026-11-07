@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
-import type { UserDeviceClientOptions } from "@rakazo/adapters/user-device-client";
+import type { UserDeviceClientOptions } from "../../../host-computer/src/user-device-client.ts";
 import type {
   RakazoDesktopDevice,
   UserDevicePairRequest,

@@ -137,6 +137,9 @@ importers:
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rakazo/host-computer':
+        specifier: workspace:*
+        version: link:../host-computer
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens
@@ -158,6 +161,46 @@ importers:
       yaml:
         specifier: 2.9.1
         version: 2.9.1
+
+  apps/host-computer:
+    dependencies:
+      '@rakazo/adapter-kit':
+        specifier: workspace:*
+        version: link:../../packages/adapter-kit
+      '@rakazo/computer':
+        specifier: workspace:*
+        version: link:../../packages/computer
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      koffi:
+        specifier: 3.3.6
+        version: 3.3.6
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
 
   apps/mobile:
     dependencies:
@@ -720,6 +763,9 @@ importers:
       '@rakazo/adapter-kit':
         specifier: workspace:*
         version: link:../adapter-kit
+      '@rakazo/computer':
+        specifier: workspace:*
+        version: link:../computer
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -729,6 +775,9 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../db
+      '@rakazo/host-computer':
+        specifier: workspace:*
+        version: link:../../apps/host-computer
       '@rakazo/logging':
         specifier: workspace:*
         version: link:../logging
@@ -942,6 +991,31 @@ importers:
       vitest:
         specifier: 4.1.12
         version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@26.5.0)(jsdom@30.1.3(@noble/hashes@2.3.0))(vite@8.3.5(@types/node@26.5.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/computer:
+    dependencies:
+      '@rakazo/adapter-kit':
+        specifier: workspace:*
+        version: link:../adapter-kit
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../core
+      koffi:
+        specifier: 3.3.6
+        version: 3.3.6
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(jsdom@30.1.3(@noble/hashes@2.3.0))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/contracts:
     dependencies:
@@ -16902,7 +16976,7 @@ snapshots:
   '@types/dockerode@4.0.2':
     dependencies:
       '@types/docker-modem': 3.0.6
-      '@types/node': 24.13.3
+      '@types/node': 24.19.2
       '@types/ssh2': 1.15.5
 
   '@types/estree-jsx@1.0.5':
@@ -16943,7 +17017,7 @@ snapshots:
 
   '@types/jsdom@30.0.0':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 24.19.2
       '@types/tough-cookie': 4.0.5
       parse5: 8.0.1
       undici-types: 8.10.0
@@ -16994,17 +17068,17 @@ snapshots:
 
   '@types/nodemailer@8.0.2':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 24.19.2
 
   '@types/pg@8.23.1':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 24.19.2
       pg-protocol: 1.16.0
       pg-types: 2.2.0
 
   '@types/pngjs@6.0.5':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 24.19.2
 
   '@types/prismjs@1.26.6': {}
 
@@ -17060,7 +17134,7 @@ snapshots:
 
   '@types/ws@8.18.2':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 24.19.2
 
   '@types/yargs-parser@21.0.3': {}
 

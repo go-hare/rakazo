@@ -40,7 +40,7 @@ describe("desktop command execution", () => {
       stderr: new PassThrough(),
     });
     const tree = { alive: () => false, kill: vi.fn(), close: vi.fn() };
-    const spawn = vi.spyOn(processTree, "spawnOwnedCommand").mockImplementation(() => {
+    const spawn = vi.spyOn(processTree, "spawnOwnedCommand").mockImplementation(async () => {
       setImmediate(() => child.emit("close", code, signal));
       return { child: child as unknown as ChildProcessWithoutNullStreams, tree };
     });
@@ -66,7 +66,7 @@ describe("desktop command execution", () => {
         stderr: new PassThrough(),
       });
       const tree = { alive: () => false, kill: vi.fn(), close: vi.fn() };
-      const spawn = vi.spyOn(processTree, "spawnOwnedCommand").mockImplementation(() => {
+      const spawn = vi.spyOn(processTree, "spawnOwnedCommand").mockImplementation(async () => {
         setImmediate(() => {
           if (outcome === "error") child.emit("error", new Error("spawn failed"));
           else controller.abort();

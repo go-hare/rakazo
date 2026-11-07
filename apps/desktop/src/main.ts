@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { startHostComputerServer } from "@rakazo/adapters/host-computer-server";
+import { startHostComputerServer } from "../../../host-computer/src/host-computer-server.ts";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import type {
   DesktopMenuCommand,

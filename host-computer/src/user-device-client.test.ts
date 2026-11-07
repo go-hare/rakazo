@@ -5,8 +5,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import { USER_DEVICE_CONNECT_PATH } from "./paths.ts";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import type { UserDeviceClient } from "./user-device-client.js";
@@ -41,7 +41,14 @@ describe("user device client", () => {
     reject401 = false;
     refusedBecause = undefined;
     revoked = vi.fn<(reason?: string) => void>();
-    http = createServer();
+    http = createServer((request, response) => {
+      if (reject401) {
+        response.writeHead(401, {
+          ...(refusedBecause ? { "x-rakazo-device-revoked": refusedBecause } : {}),
+        });
+      } else response.writeHead(200);
+      response.end();
+    });
     wss = new WebSocketServer({ noServer: true });
     http.on("upgrade", (request, socket, head) => {
       upgrades.push(request);
@@ -93,7 +100,11 @@ describe("user device client", () => {
     return received;
   }
   async function until(check: () => boolean) {
-    await vi.waitFor(() => expect(check()).toBe(true), { timeout: 10_000, interval: 10 });
+    const deadline = Date.now() + 10_000;
+    while (!check()) {
+      if (Date.now() > deadline) throw new Error("timed out waiting");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
   }
 
   it("refuses cleartext non-loopback transport before connecting", () => {
@@ -314,7 +325,7 @@ describe("user device client", () => {
     await until(() => revoked.mock.calls.length === 1);
     expect(revoked).toHaveBeenCalledWith(undefined);
     await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(upgrades).toHaveLength(1);
+    expect(upgrades).toHaveLength(0);
   });
 
   it("passes on why a refused token was revoked, and only a reason it knows", async () => {

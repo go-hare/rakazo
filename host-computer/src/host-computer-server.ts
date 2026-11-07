@@ -1,9 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { HOST_COMPUTER_MAX_BYTES } from "./host-computer-protocol.js";
+import { HOST_COMPUTER_MAX_BYTES } from "./protocol.ts";
+import type { HostScreen } from "./screen.ts";
 import { createHostComputerRunner } from "./host-computer-runner.js";
-import type { HostScreen } from "./host-screen.js";
 import type { UserDeviceClientOptions } from "./user-device-client.js";
 import { startUserDeviceClient } from "./user-device-client.js";
 

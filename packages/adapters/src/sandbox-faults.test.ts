@@ -10,7 +10,7 @@ import {
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
-import { startHostComputerServer } from "./host-computer-server.js";
+import { startHostComputerServer } from "../../../host-computer/src/host-computer-server.ts";
 import { provisionPrepared } from "./sandbox-test-support.js";
 
 let restoreFetch: () => void;
