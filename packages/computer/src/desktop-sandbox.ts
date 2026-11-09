@@ -909,7 +909,8 @@ async function* streamLocalCommand(
   sweep: () => void,
 ): AsyncIterable<ProcessEvent> {
   if (signal.aborted) {
-    yield { type: "stderr", data: "command aborted\n" };
+    yield { type: "stderr", data: "command aborted
+" };
     yield { type: "exit", code: 130 };
     return;
   }
