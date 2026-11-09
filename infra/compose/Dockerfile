@@ -37,7 +37,8 @@ COPY --chmod=755 infra/updater/package.json infra/updater/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile \
   --store-dir=/pnpm/store --cpu=current --os=current \
   --filter=. --filter="@rakazo/api..." --filter="@rakazo/worker..." \
-  --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..."
+  --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..." \
+  --filter="@rakazo/computer..."
 # Normalize modes: a restrictive host umask (e.g. 077 on hardened hosts) would otherwise
 # leave the copied tree unreadable to USER node at runtime.
 COPY --chmod=755 . .
@@ -50,7 +51,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   && pnpm install --frozen-lockfile --prod --prefer-offline \
   --store-dir=/pnpm/store --cpu=current --os=current \
   --filter="@rakazo/api..." --filter="@rakazo/worker..." \
-  --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..."
+  --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..." \
+  --filter="@rakazo/computer..."
 RUN rm -rf apps/desktop apps/mobile apps/www docs examples
 
 FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
