@@ -18,8 +18,7 @@ APP_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${APP_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
 COMPOSE_FILE="infra/compose/docker-compose.prod.yml"
 # CI allows 140 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
-# rollback, which only pulls or builds when the previous image is gone, + up to 50m (the worker's
-# stop_grace_period) twice: for a worker an earlier deploy left draining, then for this one's.
+# rollback, which only pulls or builds when the previous image is gone.
 PULL_TIMEOUT="${RAKAZO_DEPLOY_PULL_TIMEOUT:-5m}"
 BUILD_TIMEOUT="${RAKAZO_DEPLOY_BUILD_TIMEOUT:-15m}"
 UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
@@ -115,66 +114,36 @@ start_beside() {
   container_healthy "${new}"
 }
 
-# A replaced worker is not stopped like the API. It stops claiming jobs and finishes the ones it
-# is running, which can take as long as the slowest job (JOB_DRAIN_TIMEOUT_MS), while the new
-# worker takes new ones; killing it would leave each job locked for hours. A restart policy of
-# "no" keeps Docker from starting it again and marks it as draining for later runs. Prints the
-# worker containers that are live, or draining (still finishing, or exited and not yet removed).
-worker_containers() {
+# Compose no longer declares worker. Find its containers among this project's orphans,
+# including an interrupted earlier drain, without touching other Compose projects.
+legacy_workers() {
   local ids
-  ids="$(compose 1m ps --all --quiet worker)"
+  ids="$(compose 1m ps --all --orphans --quiet)"
   [[ -n "${ids}" ]] || return 0
-  # shellcheck disable=SC2086 # one container ID per word
-  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}}' ${ids} |
-    awk -v wanted="$1" '($2 == "no" ? "draining" : "live") == wanted { print $1 }'
+  # shellcheck disable=SC2086
+  sudo docker inspect --format '{{.Id}} {{index .Config.Labels "com.docker.compose.service"}} {{.HostConfig.RestartPolicy.Name}}' ${ids} |
+    awk -v wanted="$1" '$2 == "worker" && (wanted == "all" || $3 == "no") { print $1 }'
 }
 
-# Waits for draining workers to exit and removes them. docker stop gives each the rest of the
-# worker's stop_grace_period before it kills one.
-finish_draining() {
+finish_legacy_workers() {
   local workers
-  workers="$(worker_containers draining)"
+  workers="$(legacy_workers "$1")"
   [[ -n "${workers}" ]] || return 0
-  echo "Waiting for the previous worker to finish its running jobs."
+  # Disable restarts before signalling, then give running jobs their former grace period.
   # shellcheck disable=SC2086
-  sudo docker stop ${workers} >/dev/null
+  sudo docker update --restart no ${workers} >/dev/null
+  # shellcheck disable=SC2086
+  sudo docker kill --signal SIGTERM ${workers} >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  sudo docker stop --time 3000 ${workers} >/dev/null
   # shellcheck disable=SC2086
   sudo docker rm ${workers} >/dev/null
 }
 
-drain_workers() {
-  # shellcheck disable=SC2086 # one container ID per word
-  sudo docker update --restart no $1 >/dev/null
-  # One that is not running has nothing to finish; finish_draining removes it.
-  # shellcheck disable=SC2086
-  sudo docker kill --signal SIGTERM $1 >/dev/null 2>&1 || true
-}
-
-replace_worker() {
-  local live
-  live="$(worker_containers live)"
-  if [[ -n "$(worker_containers draining)" ]]; then
-    # Only a rollback finds a worker still draining: the one its deploy replaced. The failed
-    # release's worker stops claiming jobs too, and the restored one starts once both exit,
-    # because a scale-up would also start a drained worker that exited in the meantime.
-    [[ -z "${live}" ]] || drain_workers "${live}"
-    finish_draining
-    live=""
-  fi
-  if [[ -z "${live}" ]]; then
-    compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
-    return
-  fi
-  start_beside worker "${live}"
-  drain_workers "${live}"
-}
-
-# Replaces the API, web and worker without a gap: one new container starts beside the running
+# Replaces the API and web without a gap: one new container starts beside the running
 # ones, and the old ones stop only once it passes its health check. Caddy dials whichever container
-# answers, so requests keep flowing through a deploy, and the new worker picks up chat runs while
-# the old one hands back the runs it was executing. Every other service is then reconciled
+# answers, so requests keep flowing through a deploy. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
-# Compose leaves the worker alone there, since it would stop a draining one.
 roll_out() {
   local service old services
   # Migrations run first, from their own container: it is the only one given the owner login.
@@ -195,15 +164,19 @@ roll_out() {
       continue
     fi
     start_beside "${service}" "${old}"
+    # API now owns background jobs, which may need the former worker's drain window.
     # shellcheck disable=SC2086 # one container ID per word
-    sudo docker stop --time 30 ${old} >/dev/null
+    sudo docker stop --time "$([[ "${service}" == api ]] && printf 3000 || printf 30)" ${old} >/dev/null
     # shellcheck disable=SC2086
     sudo docker rm ${old} >/dev/null
   done
-  replace_worker
+  # Do not let --remove-orphans kill jobs held by a worker from the previous release.
+  if ! grep -qx worker <<<"${services}"; then
+    finish_legacy_workers all
+  fi
   # shellcheck disable=SC2046 # one service name per word
-  # A second migration run would consume a deferred drop before the old worker has drained.
-  compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans $(compose 1m config --services | grep -Ev '^(worker|migrate)$')
+  # A second migration run would consume a deferred drop while the previous release is still up.
+  compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans $(compose 1m config --services | grep -Ev '^(migrate)$')
 }
 
 # Caddy mounts its config as a single file, which keeps the old inode after a git checkout, so a
@@ -280,7 +253,6 @@ rollback() {
   fi
   roll_out
   apply_caddyfile "${target_revision}" "${previous_revision}"
-  finish_draining || echo "Could not remove the replaced worker; the next deploy will." >&2
   exit 1
 }
 trap rollback ERR
@@ -335,9 +307,8 @@ fi
 app_image="$(compose_app_image)"
 [[ -n "${app_image}" ]] || { echo "Could not find the api image in ${COMPOSE_FILE}." >&2; false; }
 use_revision_image "${target_revision}" "${BUILD_TIMEOUT}"
-# A worker still draining from a deploy that stopped early runs code older than the previous
-# release, which these migrations need not support.
-finish_draining
+# A worker already draining may predate the release migrations support.
+finish_legacy_workers no
 roll_out
 apply_caddyfile "${previous_revision}" "${target_revision}"
 
@@ -346,9 +317,6 @@ for _ in {1..30}; do
     printf '%s\n' "${target_revision}" >"${APP_DIR}/.last-deployed-revision"
     trap - ERR
     prune_docker
-    # Production already runs the new release; this only holds the next deploy until the
-    # replaced worker has finished its jobs.
-    finish_draining || echo "Could not remove the replaced worker; the next deploy will." >&2
     echo "Deployed ${target_revision} successfully."
     exit 0
   fi

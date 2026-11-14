@@ -55,8 +55,7 @@ const STEP_TIMEOUT_MS: Record<string, number> = {
   checkout: 60_000,
   merge: 60_000,
   pull: 600_000,
-  // A recreate can build, wait up to the worker's 50-minute stop_grace_period for its running
-  // jobs, and then wait for the new services to become healthy.
+  // A recreate can build, then wait for the new services to become healthy.
   recreate: 5_400_000,
   recover: 5_400_000,
 };
@@ -559,8 +558,8 @@ export function createUpdaterApp(
         steps,
         restartAdvice:
           decision.strategy === "pull"
-            ? `The updater deployed ${releaseTag ?? targetTag} from its full source-commit image tag and recreated the API, worker, and web containers. Migrations ran inside the new API container before it became healthy.`
-            : "The updater built the fork and recreated the API, worker, and web containers. Migrations ran inside the new API container before it started serving.",
+            ? `The updater deployed ${releaseTag ?? targetTag} from its full source-commit image tag and recreated the API and web containers. Migrations ran inside the new API container before it became healthy.`
+            : "The updater built the fork and recreated the API and web containers. Migrations ran inside the new API container before it started serving.",
       }),
     );
   }

@@ -36,7 +36,7 @@ const publishWorkflow = parse(readFileSync(publishWorkflowFile, "utf8")) as {
   };
 };
 
-const appServices = ["api", "worker", "web", "supervisor", "migrate"] as const;
+const appServices = ["api", "web", "supervisor", "migrate"] as const;
 const FIRST_PARTY_IMAGE = /ghcr\.io\/elie222\/rakazo\/([a-z0-9][a-z0-9._-]*)/g;
 
 function firstPartyImageNames(value: unknown): string[] {
@@ -59,7 +59,6 @@ describe("the images compose file", () => {
       "postgres",
       "supervisor",
       "web",
-      "worker",
     ]);
     for (const service of appServices) {
       expect(compose.services[service]?.image).toContain("ghcr.io/elie222/rakazo/app");
@@ -107,8 +106,8 @@ describe("the images compose file", () => {
     }
   });
 
-  it("passes optional HTTP(S)_PROXY / NO_PROXY into api and worker", () => {
-    for (const name of ["api", "worker"] as const) {
+  it("passes optional HTTP(S)_PROXY / NO_PROXY into api", () => {
+    for (const name of ["api"] as const) {
       const env = compose.services[name]?.environment ?? {};
       expect(env.HTTP_PROXY).toBe("${HTTP_PROXY:-${http_proxy:-}}");
       expect(env.HTTPS_PROXY).toBe("${HTTPS_PROXY:-${https_proxy:-}}");
@@ -138,7 +137,7 @@ describe("the images compose file", () => {
   });
 
   it("passes secrets from the --env-file by name instead of loading the whole file", () => {
-    for (const service of ["api", "worker"]) {
+    for (const service of ["api"]) {
       expect(compose.services[service]?.env_file).toBeUndefined();
       // A key with no value is filled from the --env-file when set and left unset otherwise.
       expect(compose.services[service]?.environment).toHaveProperty("ENCRYPTION_KEY", null);
@@ -146,13 +145,9 @@ describe("the images compose file", () => {
     }
   });
 
-  it("defaults API and worker to Docker computers via the supervisor", () => {
+  it("defaults the API to Docker computers via the supervisor", () => {
     expect(compose.services.api?.environment?.SANDBOX_PROVIDER).toContain("docker");
-    expect(compose.services.worker?.environment?.SANDBOX_PROVIDER).toContain("docker");
     expect(compose.services.api?.environment?.SANDBOX_SUPERVISOR_URL).toBe(
-      "http://supervisor:7091",
-    );
-    expect(compose.services.worker?.environment?.SANDBOX_SUPERVISOR_URL).toBe(
       "http://supervisor:7091",
     );
   });

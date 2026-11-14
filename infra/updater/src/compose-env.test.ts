@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 /**
- * The api and worker containers get an explicit environment allowlist instead of the whole
+ * The api container gets an explicit environment allowlist instead of the whole
  * `.env`, so a process (and every command it spawns) only sees the settings it reads. These
  * tests derive what each process reads from its source and fail when a compose file forgets a
  * key it needs, or passes one it does not.
@@ -19,7 +19,7 @@ interface ComposeService {
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const composeDir = path.join(repoRoot, "infra/compose");
 
-/** Server packages the api and worker both load. UI and test-only packages are not scanned. */
+/** Server packages the api loads. UI and test-only packages are not scanned. */
 const SHARED_SOURCES = [
   "packages/adapter-kit/src",
   "packages/adapters/src",
@@ -33,13 +33,11 @@ const SHARED_SOURCES = [
 
 const SOURCES = {
   api: ["apps/api/src", ...SHARED_SOURCES],
-  worker: ["apps/worker/src", ...SHARED_SOURCES],
 } as const;
 
-const KUBERNETES_SANDBOX =
-  "SANDBOX_PROVIDER=kubernetes runs the api and worker in a cluster, not Compose";
+const KUBERNETES_SANDBOX = "SANDBOX_PROVIDER=kubernetes runs the api in a cluster, not Compose";
 
-/** Read by code but never passed to the api or worker containers, with the reason. */
+/** Read by code but never passed to the api container, with the reason. */
 const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
   OWNER_EMAIL: "bootstrap-owner CLI input, passed on its own command line",
@@ -50,7 +48,6 @@ const NOT_PASSED: Record<string, string> = {
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
-  SHELL: "host shell for the desktop computer, which only the Electron app runs",
   CLOUDFLARE_ACCOUNT_ID: "written into Pi's environment from stored gateway settings",
   CLOUDFLARE_GATEWAY_ID: "written into Pi's environment from stored gateway settings",
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
@@ -73,12 +70,11 @@ const NOT_PASSED: Record<string, string> = {
 
 /**
  * Shared-package reads a process must not receive. Only the API signs sessions and talks to
- * the identity provider, so the worker resolves no auth secret. Only the migrate container
- * gets the owner database login, so neither process holds one that bypasses row-level security.
+ * the identity provider. Only the migrate container
+ * gets the owner database login, so the API holds none that bypasses row-level security.
  */
 const DENIED = {
   api: ["DATABASE_MIGRATION_URL"],
-  worker: ["BETTER_AUTH_SECRET", "DATABASE_MIGRATION_URL"],
 } as const;
 
 /** Reads a source scan cannot see: names held in constants or read by third-party SDKs. */
@@ -110,7 +106,6 @@ const INDIRECT = {
     // core/secrets-guard.ts resolves these by name.
     "SCREEN_PROXY_SECRET",
   ],
-  worker: [],
 } as const;
 
 const ENV_NAME = "[A-Z][A-Z0-9_]+";
@@ -162,7 +157,7 @@ function piEnvKeys(): string[] {
   return names.map((match) => match[1] ?? "");
 }
 
-function expectedKeys(service: "api" | "worker"): string[] {
+function expectedKeys(service: "api"): string[] {
   const keys = new Set([
     ...scanEnvReads(SOURCES[service]),
     ...piEnvKeys(),
@@ -194,34 +189,29 @@ function stackEnvironment(files: string[], service: string): Record<string, unkn
   return Object.assign({}, ...files.map((file) => loadServices(file)[service]?.environment ?? {}));
 }
 
-describe("api and worker environment allowlists", () => {
+describe("api environment allowlist", () => {
   it("finds the reads it is meant to find", () => {
     const api = expectedKeys("api");
-    const worker = expectedKeys("worker");
     for (const key of ["DATABASE_URL", "ENCRYPTION_KEY", "OPENROUTER_API_KEY", "E2B_API_KEY"]) {
       expect(api).toContain(key);
-      expect(worker).toContain(key);
     }
     for (const key of ["BETTER_AUTH_SECRET", "OIDC_CLIENT_SECRET", "SCREEN_PROXY_SECRET"]) {
       expect(api).toContain(key);
-      expect(worker).not.toContain(key);
     }
     expect(api).toContain("OPENAI_API_KEY");
-    expect(worker).toContain("AWS_BEARER_TOKEN_BEDROCK");
-    expect(worker).toContain("GRAPHILE_WORKER_CONCURRENCY");
     expect(api).not.toContain("GRAPHILE_WORKER_CONCURRENCY");
   });
 
   it("only excludes settings the code still reads", () => {
-    const read = scanEnvReads([...SOURCES.api, ...SOURCES.worker]);
+    const read = scanEnvReads([...SOURCES.api]);
     expect(Object.keys(NOT_PASSED).filter((key) => !read.has(key))).toEqual([]);
-    expect([...DENIED.api, ...DENIED.worker].filter((key) => !read.has(key))).toEqual([]);
+    expect([...DENIED.api].filter((key) => !read.has(key))).toEqual([]);
   });
 
   it.each(STACKS.map((files) => [files.join(" + "), files] as const))(
     "%s passes each process exactly the settings it reads",
     (_name, files) => {
-      for (const service of ["api", "worker"] as const) {
+      for (const service of ["api"] as const) {
         for (const file of files) expect(loadServices(file)[service]?.env_file).toBeUndefined();
         const keys = Object.keys(stackEnvironment(files, service)).sort();
         expect({ service, keys }).toEqual({ service, keys: expectedKeys(service) });
@@ -230,19 +220,8 @@ describe("api and worker environment allowlists", () => {
   );
 
   it.each(STACKS.map((files) => [files.join(" + "), files] as const))(
-    "%s keeps auth and database owner secrets out of the worker and API",
+    "%s keeps updater and database owner secrets out of the API",
     (_name, files) => {
-      const worker = stackEnvironment(files, "worker");
-      for (const key of [
-        "BETTER_AUTH_SECRET",
-        "OIDC_CLIENT_SECRET",
-        "SCREEN_PROXY_SECRET",
-        "RAKAZO_UPDATER_TOKEN",
-        "STRIPE_SECRET_KEY",
-        "POSTGRES_PASSWORD",
-      ]) {
-        expect(worker).not.toHaveProperty(key);
-      }
       expect(stackEnvironment(files, "api")).not.toHaveProperty("RAKAZO_UPDATER_TOKEN");
       // The database password reaches both processes only inside DATABASE_URL.
       expect(stackEnvironment(files, "api")).not.toHaveProperty("POSTGRES_PASSWORD");
@@ -264,7 +243,7 @@ describe("api and worker environment allowlists", () => {
         (match) => match[1] ?? "",
       );
       expect(baked).toContain("GIT_SHA");
-      for (const service of ["api", "worker"]) {
+      for (const service of ["api"]) {
         const environment = stackEnvironment(files, service);
         for (const key of baked) {
           if (key in environment)

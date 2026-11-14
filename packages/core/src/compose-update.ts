@@ -15,7 +15,7 @@ import {
  */
 export const PUBLISHED_IMAGE_REPO = "elie222/rakazo";
 
-/** The published server image. One image runs api, worker, and web. */
+/** The published server image. One image runs api and web. */
 export const OFFICIAL_SERVER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/app`;
 /** The updater sidecar's image, published alongside the server image but tagged independently. */
 export const OFFICIAL_UPDATER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/updater`;
@@ -43,7 +43,7 @@ export const COMPOSE_PROJECT_NAME_OVERRIDE_ENV = "RAKAZO_COMPOSE_PROJECT_NAME";
  * the update, and recreating it would kill the run half way through. `postgres` and `caddy` are
  * absent because neither uses the Rakazo image.
  */
-export const RECREATED_SERVICES = ["api", "worker", "web"] as const;
+export const RECREATED_SERVICES = ["api", "web"] as const;
 
 const IMAGE_TAG = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
 const IMAGE_NAME_SEGMENT = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;

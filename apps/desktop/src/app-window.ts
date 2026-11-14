@@ -183,7 +183,8 @@ export function createWindow(url: string, partition: string | null) {
   });
   // Signing in lands on a new page; pair then instead of waiting for the next launch.
   const pairAfterNavigation = () => {
-    if (desktop.mainWindow === win) void desktop.userDevices?.pair();
+    if (desktop.mainWindow !== win) return;
+    void desktop.userDevices?.pair().then(() => desktop.refreshDaemon?.());
   };
   win.webContents.on("did-navigate", pairAfterNavigation);
   win.webContents.on("did-navigate-in-page", pairAfterNavigation);

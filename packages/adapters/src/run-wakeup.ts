@@ -25,11 +25,14 @@ const RESUMABLE = ["queued", "waiting_input", "waiting_takeover"];
 export class RunStarter {
   private readonly executions = new RunExecutionHost();
   private readonly inFlight = new Set<string>();
+  private readonly ownershipChecks = new Set<Promise<boolean>>();
   /** Runs made due again while this process was still finishing them. */
   private readonly dueAgain = new Set<string>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private handlers: BackgroundJobHandlers | undefined;
   private stopping = false;
+  /** Optional routing for runs owned by another execution surface. */
+  ownRun?: (runId: string) => Promise<boolean>;
 
   constructor(
     private readonly realtime: RealtimeFanout,
@@ -74,7 +77,7 @@ export class RunStarter {
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
     this.dueAgain.clear();
-    await this.executions.stop();
+    await Promise.all([this.executions.stop(), Promise.allSettled(this.ownershipChecks)]);
   }
 
   private get accepting(): boolean {
@@ -101,6 +104,20 @@ export class RunStarter {
     this.inFlight.add(runId);
     let admitted = false;
     try {
+      if (this.ownRun) {
+        const ownership = this.ownRun(runId);
+        this.ownershipChecks.add(ownership);
+        let owned: boolean;
+        try {
+          owned = await ownership;
+        } finally {
+          this.ownershipChecks.delete(ownership);
+        }
+        if (owned) {
+          this.finished(runId);
+          return;
+        }
+      }
       admitted = await this.executions.execute(
         (execution) =>
           runCorrelatedJob({
@@ -140,6 +157,11 @@ export class RunJobPublisher implements JobPublisher {
     private readonly background: JobPublisher,
     private readonly starter: RunStarter,
   ) {}
+
+  /** Route both published and recovered runs through the same owner. */
+  set ownRun(owner: ((runId: string) => Promise<boolean>) | undefined) {
+    this.starter.ownRun = owner;
+  }
 
   async enqueue(job: BackgroundJob): Promise<void> {
     if (job.name !== "run.continue") return this.background.enqueue(job);

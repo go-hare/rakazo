@@ -81,6 +81,12 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "user",
   },
+  DaemonCommand: {
+    table: "daemon_commands",
+    fields: { payload: { plainKeys: new Set() } },
+    space: { column: "spaceId" },
+    ownerRelation: "thread",
+  },
   /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
   BotEmailMessage: {
     table: "bot_email_messages",

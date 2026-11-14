@@ -97,7 +97,6 @@
     {
       "includes": [
         "apps/api/**",
-        "apps/worker/**",
         "infra/sandboxes/supervisor/**",
         "infra/updater/**",
         "packages/adapters/**",

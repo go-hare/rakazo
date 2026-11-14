@@ -13,6 +13,7 @@ import {
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import * as daemonMachines from "./daemon-machines.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
 
@@ -627,6 +628,9 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   });
 
   it("saves a typed stop only together with its cancel, so a retry finishes it", async () => {
+    const cancelDaemonTurn = vi
+      .spyOn(daemonMachines, "cancelDaemonTurn")
+      .mockImplementation(() => {});
     const task = await system.task.create({
       data: {
         spaceId: actor.spaceId,
@@ -646,6 +650,8 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         taskId: task.id,
         status: "running",
         trigger: "user",
+        deviceId: "device-1",
+        deviceTurnId: "turn-1",
       },
     });
     const failing = prisma.$extends({
@@ -672,6 +678,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         ),
       );
     await expect(send(failing as PrismaClient)).rejects.toThrow("synthetic stop failure");
+    expect(cancelDaemonTurn).not.toHaveBeenCalled();
     expect(await system.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
       status: "running",
     });
@@ -679,6 +686,12 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     expect(await system.steeringMessage.count({ where: { botId } })).toBe(0);
 
     await send(prisma);
+    expect(cancelDaemonTurn).toHaveBeenCalledExactlyOnceWith({
+      deviceId: "device-1",
+      deviceTurnId: "turn-1",
+      threadId,
+    });
+    cancelDaemonTurn.mockRestore();
     expect(await system.run.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({
       status: "cancelled",
     });

@@ -12,7 +12,6 @@ import { serverBuildOptions } from "./build-server.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENTRIES = [
   "apps/api/src/index.ts",
-  "apps/worker/src/index.ts",
   "infra/sandboxes/supervisor/src/index.ts",
   "infra/updater/src/index.ts",
 ];

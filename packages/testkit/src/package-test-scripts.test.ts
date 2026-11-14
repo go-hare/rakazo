@@ -7,7 +7,7 @@ const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const vitest = path.join(repoRoot, "node_modules/vitest/vitest.mjs");
 
 describe("package test scripts", () => {
-  it.each(["apps/worker", "packages/ui-tokens", "packages/ui-web"])(
+  it.each(["packages/ui-tokens", "packages/ui-web"])(
     "%s discovers its own tests from the package directory",
     (directory) => {
       const cwd = path.join(repoRoot, directory);

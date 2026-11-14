@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { setTimeout as sleep } from "node:timers/promises";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -7,6 +8,7 @@ import type {
   BillingProvider,
   ConnectorProvider,
   JobPublisher,
+  JobWorkerHost,
   ManagedConnectorProvider,
   MessagingSurface,
   NotificationProvider,
@@ -34,18 +36,24 @@ import {
   createArtifactStore,
   createCloudAgentConnection,
   createConnectorRuntime,
+  createDeadJobPruner,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
+  createPostgresReconciliationLeadership,
   createProductAnalytics,
+  createReservedGraphileJobWorkerHost,
+  createRoutineRetryNoticeReconciler,
   createRunReconciler,
   createRunRuntime,
   createRunSandbox,
   createRunSecretWriter,
   createSecretStore,
   createTicketChangeNotifier,
+  databaseCapacityBackoffMs,
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
+  homeStorageSweeper,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
   installedMessaging,
@@ -59,6 +67,7 @@ import {
   piSessionsRoot,
   RunJobPublisher,
   RunStarter,
+  RunWorkerHost,
   removePiUserSessions,
   resolveDeploymentModel,
   ScriptedAgentRuntime,
@@ -72,6 +81,7 @@ import {
   userDeviceInternalAddress,
   verifyModelServesAgents,
   WorkActivities,
+  withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
@@ -100,6 +110,7 @@ import {
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
+  isTooManyDatabaseConnections,
   observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
@@ -138,6 +149,14 @@ import {
   withClientIp,
 } from "./client-ip.js";
 import { cspReportRoutes } from "./csp-report.js";
+import {
+  acceptDaemonUpgrade,
+  attachDaemonRuns,
+  bindDaemonMachines,
+  createDaemonRunGateway,
+  mountDaemonMachines,
+  startDaemonMachines,
+} from "./daemon-machines.js";
 import { configuredEmailProvider } from "./email.js";
 import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
@@ -180,8 +199,14 @@ export const MOBILE_AUTH_ORIGINS = [
   "http://127.0.0.1:19006",
 ];
 
-// Deploys give the old API 30 seconds to stop before killing it.
+// Requests have a shorter drain window than background jobs.
 const REQUEST_DRAIN_MS = 20_000;
+
+export function beginJobDrain(shutdown: AbortController, host: JobWorkerHost): Promise<void> {
+  // Runs checkpoint and hand off; other Graphile jobs finish before their dependencies close.
+  shutdown.abort();
+  return host.stop();
+}
 
 export interface AppHandles {
   app: Hono;
@@ -261,7 +286,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
-  const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
+  const poolMax = parsePositiveInteger(
+    process.env.DB_POOL_MAX,
+    env.wakeupDriver === "memory" ? 4 : 8,
+  );
+  if (env.wakeupDriver !== "memory" && poolMax < 6)
+    throw new Error("DB_POOL_MAX must be at least 6 for the Graphile worker");
   configureProviderTransactionPool(poolMax);
   const created = prismaOverride
     ? { prisma: prismaOverride, pool: undefined }
@@ -338,7 +368,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   let ownedJobPool: Pool | undefined;
   if (!inMemoryJobs && !created.pool) {
     ownedJobPool = createPool(env.databaseUrl, {
-      poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 4),
+      poolMax,
       applicationName: "rakazo-api-jobs",
     });
   }
@@ -359,6 +389,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ),
       runs!,
     );
+  const daemonMachines = startDaemonMachines(env.dataDir, prisma, events);
+  bindDaemonMachines(daemonMachines);
+  attachDaemonRuns(jobs, prisma, daemonMachines, events);
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,
@@ -624,27 +657,52 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     cloudAgent,
     userDevices: userDevicesOverride ?? userDevices,
     paymentWallet,
+    daemonRuns: createDaemonRunGateway(daemonMachines, prisma),
     shutdownSignal: shutdown.signal,
     now,
   });
 
-  if (inMemoryJobs) {
-    await inMemoryJobs.start(jobHandlers);
+  const jobHost =
+    inMemoryJobs ??
+    withRunWorker(
+      new RunWorkerHost(prisma, realtime, runs!, { pool: jobPool }),
+      createReservedGraphileJobWorkerHost(jobPool!, {
+        concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
+      }),
+    );
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await jobHost.start(jobHandlers);
+      break;
+    } catch (error) {
+      if (!isTooManyDatabaseConnections(error)) throw error;
+      logger.error("job host start waiting on database capacity", error);
+      await sleep(databaseCapacityBackoffMs(attempt));
+    }
   }
-  runs?.attach(jobHandlers);
-  const reconciler = inMemoryJobs
-    ? createRunReconciler({
-        prisma,
-        jobs,
-        events,
-        notifications,
-        cloudAgent,
-        paymentWallet,
-        mediaGeneration,
-        billingEnabled: modelCreditsEnabled,
-      })
-    : undefined;
-  reconciler?.start();
+  const reconciler = createRunReconciler(
+    {
+      prisma,
+      jobs,
+      events,
+      notifications,
+      cloudAgent,
+      paymentWallet,
+      mediaGeneration,
+      billingEnabled: modelCreditsEnabled,
+    },
+    jobPool && !inMemoryJobs
+      ? {
+          leadership: createPostgresReconciliationLeadership(jobPool),
+          reconcileRoutineRetryNotices: createRoutineRetryNoticeReconciler(jobPool, (runId) =>
+            executor.notifyRoutineRetryAttemptsExhausted(runId),
+          ),
+          reconcileHomeStorage: homeStorageSweeper(home),
+          reconcileDeadJobs: createDeadJobPruner(jobPool),
+        }
+      : {},
+  );
+  reconciler.start();
   const stopReferralEmails =
     email && env.welcomeEmailEnabled && billing?.referralsEnabled
       ? startHourlySweep(
@@ -940,6 +998,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     return actor && { actor, sessionId: session.session.id };
   };
   const sessionActor = async (request: Request) => (await requestSession(request))?.actor ?? null;
+  mountDaemonMachines(
+    app,
+    daemonMachines,
+    async (request) => {
+      const found = await auth.api.getSession({ headers: request.headers });
+      return found ? { userId: found.user.id, sessionId: found.session.id } : null;
+    },
+    prisma,
+  );
   if (userDeviceHub && userDevices) {
     mountUserDeviceRoutes(app, {
       prisma,
@@ -1097,26 +1164,27 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime,
     awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
     backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
-    handleUpgrade: userDeviceHub?.handleUpgrade,
+    handleUpgrade: (request, socket, head) => {
+      if (acceptDaemonUpgrade(daemonMachines, request, socket, head)) return;
+      userDeviceHub?.handleUpgrade(request, socket, head);
+    },
     stop: async () => {
       // Handlers still running would otherwise query the pool after it ends.
       const requestsSettled = settleWithTimeout(inFlight.settled(), REQUEST_DRAIN_MS);
       // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
       // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
       auth.disposeOidcDiscovery();
-      shutdown.abort();
-      // Aborted runs hand themselves back while realtime is still open to announce them.
-      const runsStopped = runs?.stop();
-      await userDeviceHub?.close();
+      const jobsStopped = beginJobDrain(shutdown, jobHost);
+      // Keep messaging, device sockets and providers available to the jobs draining above.
       oauthLogins.abortAll();
-      await messagingRuntime?.stop();
+      await Promise.all([jobsStopped, reconciler.stop()]);
       await stopReferralEmails?.();
       await stopHomeRetention?.();
       await stopOrganizationDeletions();
-      await reconciler?.stop();
+      await userDeviceHub?.close();
+      await messagingRuntime?.stop();
       await oauthTokenUpgrade;
       await mcpArgsMove;
-      await runsStopped;
       await requestsSettled;
       await email?.drain?.();
       await jobs.close();

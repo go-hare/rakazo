@@ -34,7 +34,6 @@ export CONTENT_ENCRYPTION="${CONTENT_ENCRYPTION:-on}"
 export TRUSTED_PROXIES="${TRUSTED_PROXIES:-127.0.0.1}"
 export CLIENT_IP_HEADER="${CLIENT_IP_HEADER:-x-real-ip}"
 pnpm --filter @rakazo/api start &
-pnpm --filter @rakazo/worker start &
 (
   node --input-type=module -e '
   for (let attempt = 0; attempt < 60; attempt++) {

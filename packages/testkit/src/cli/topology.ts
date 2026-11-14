@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import path from "node:path";
-import type { RunsListOutput, ThreadSnapshot } from "@rakazo/contracts";
+import type { RunsListOutput } from "@rakazo/contracts";
 import { isTerminal } from "@rakazo/core";
 import { computerNetworkNameFor } from "@rakazo/sandbox-supervisor/computer-spec";
 
@@ -40,13 +40,9 @@ async function main() {
       "supervisor",
       "api",
       "web",
-      "worker",
     ]);
     await waitForHealth(baseUrl, 120_000);
-    await waitForWorker(compose, 60_000);
     await waitForComposeHealth(compose, "web", 60_000);
-
-    compose(["stop", "worker"]);
     cookie = await signup(baseUrl);
     const bot = await rpc<{ id: string }>(baseUrl, cookie, "bots/create", {
       name: "Topology",
@@ -60,17 +56,9 @@ async function main() {
       botId: bot.id,
       text: "write a file in your home called notes/result.txt that says topology-recovery-ok",
     });
-    const queued = await rpc<ThreadSnapshot>(baseUrl, cookie, "threads/get", { botId: bot.id });
-    if (queued.run?.id !== sent.runId || queued.run.status !== "queued") {
-      throw new Error(
-        `run was not left queued while worker was stopped: ${JSON.stringify(queued.run)}`,
-      );
-    }
-
-    compose(["start", "worker"]);
     const completed = await waitForRun(baseUrl, cookie, bot.id, sent.runId, 90_000);
     if (completed.runId !== sent.runId || completed.status !== "completed") {
-      throw new Error(`worker did not complete queued run: ${JSON.stringify(completed)}`);
+      throw new Error(`API did not complete run: ${JSON.stringify(completed)}`);
     }
     const file = await rpc<{ content: string }>(baseUrl, cookie, "computer/readFile", {
       botId: bot.id,
@@ -99,15 +87,7 @@ async function main() {
       JSON.stringify(
         {
           ok: true,
-          topology: [
-            "postgres",
-            "api",
-            "web-proxy",
-            "graphile-worker",
-            "supervisor",
-            "docker-computer",
-          ],
-          recovery: "queued while worker stopped, completed after worker restart",
+          topology: ["postgres", "api", "web-proxy", "supervisor", "docker-computer"],
           runId: sent.runId,
         },
         null,
@@ -215,21 +195,6 @@ async function waitForHealth(baseUrl: string, timeoutMs: number) {
     await delay(500);
   }
   throw new Error(`topology API did not become healthy: ${last}`);
-}
-
-async function waitForWorker(
-  compose: (args: string[], capture?: boolean) => string,
-  timeoutMs: number,
-) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const logs = compose(["logs", "--no-color", "--tail", "100", "worker"], true);
-    // The worker logs readiness as a structured JSON record; match its message field alone so
-    // the sink's key order does not matter.
-    if (logs.includes('"message":"worker ready"')) return;
-    await delay(500);
-  }
-  throw new Error("Graphile worker did not become ready");
 }
 
 async function waitForComposeHealth(

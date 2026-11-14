@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import type { RequestListener, Server } from "node:http";
@@ -8,7 +7,6 @@ import path from "node:path";
 import type { ElectronApplication } from "@playwright/test";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { RakazoDesktop } from "@rakazo/contracts";
-import { prepareHostComputer } from "../src/host-computer.js";
 import { shownWindow } from "./shown-window.js";
 
 const APP_MARKER = "Local Rakazo stack ready";
@@ -361,12 +359,6 @@ test("a saved local stack that is down is started again without asking", async (
 test("a saved local stack is reused only after its private identity matches", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
-  const host = await prepareHostComputer(userData);
-  await writeFile(
-    path.join(stackDir, ".desktop-host-config"),
-    createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),
-  );
-  await host.close();
   await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
     encoding: "utf8",
     mode: 0o600,

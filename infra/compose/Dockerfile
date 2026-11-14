@@ -14,7 +14,6 @@ COPY --chmod=755 apps/api/package.json apps/api/
 COPY --chmod=755 apps/desktop/package.json apps/desktop/
 COPY --chmod=755 apps/mobile/package.json apps/mobile/
 COPY --chmod=755 apps/web/package.json apps/web/
-COPY --chmod=755 apps/worker/package.json apps/worker/
 COPY --chmod=755 apps/www/package.json apps/www/
 COPY --chmod=755 packages/adapter-kit/package.json packages/adapter-kit/
 COPY --chmod=755 packages/adapters/package.json packages/adapters/
@@ -32,26 +31,26 @@ COPY --chmod=755 packages/ui-tokens/package.json packages/ui-tokens/
 COPY --chmod=755 packages/ui-web/package.json packages/ui-web/
 COPY --chmod=755 infra/sandboxes/supervisor/package.json infra/sandboxes/supervisor/
 COPY --chmod=755 infra/updater/package.json infra/updater/
-# Only what the image runs (api, worker, web, supervisor) and the root build tools, with
+# Only what the image runs (api, web, supervisor) and the root build tools, with
 # native binaries for this image's platform alone. Mobile, desktop and the marketing site
 # never run here.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile \
   --store-dir=/pnpm/store --cpu=current --os=current \
-  --filter=. --filter="@rakazo/api..." --filter="@rakazo/worker..." \
+  --filter=. --filter="@rakazo/api..." \
   --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..." \
   --filter="@rakazo/computer..."
 # Normalize modes: a restrictive host umask (e.g. 077 on hardened hosts) would otherwise
 # leave the copied tree unreadable to USER node at runtime.
 COPY --chmod=755 . .
 RUN pnpm --filter @rakazo/db generate
-RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
+RUN pnpm --filter @rakazo/api build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 # The runtime keeps production dependencies only; build and test tooling stays in this stage.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   find . -name node_modules -type d -prune -exec rm -rf {} + \
   && pnpm install --frozen-lockfile --prod --prefer-offline \
   --store-dir=/pnpm/store --cpu=current --os=current \
-  --filter="@rakazo/api..." --filter="@rakazo/worker..." \
+  --filter="@rakazo/api..." \
   --filter="@rakazo/web..." --filter="@rakazo/sandbox-supervisor..." \
   --filter="@rakazo/computer..."
 RUN rm -rf apps/desktop apps/mobile apps/www docs examples

@@ -211,7 +211,11 @@ export function createThreadEvents(
       await realtime?.publish(`incoming-calls:${userId}`, "");
     },
     followIncomingCalls: (userId, signal) => followIncomingCallSignals(realtime, userId, signal),
-    answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
+    answerRunInput: async (input) => {
+      const { answerLiveDaemonAsk } = await import("./daemon-live-ask.js");
+      if (await answerLiveDaemonAsk(prisma, input, realtime)) return true;
+      return answerRunInput(prisma, input, realtime, options.runSecretWriter);
+    },
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
     clearThread: (input) => clearThread(prisma, input, realtime),

@@ -532,6 +532,52 @@ describe("durable direct run wakeups", () => {
     }
   });
 
+  it("routes published and recovered runs through their owner", async () => {
+    const f = fixture();
+    f.rows.set("published", { status: "queued", wakeAt: null });
+    const owner = vi.fn(async () => true);
+    const handler = vi.fn();
+    f.publisher.ownRun = owner;
+    try {
+      f.starter.attach({ "run.continue": handler } as unknown as BackgroundJobHandlers);
+      await f.publisher.enqueue(runContinueJob("published"));
+      f.starter.take("recovered");
+      await vi.waitFor(() => expect(owner).toHaveBeenCalledTimes(2));
+      expect(owner).toHaveBeenCalledWith("published");
+      expect(owner).toHaveBeenCalledWith("recovered");
+      expect(handler).not.toHaveBeenCalled();
+    } finally {
+      await f.starter.stop();
+    }
+  });
+
+  it.each(["owned", "unowned", "failed"])(
+    "waits for an in-flight %s ownership check during shutdown",
+    async (result) => {
+      const f = fixture();
+      let resolve!: (owned: boolean) => void;
+      let reject!: (error: Error) => void;
+      const ownership = new Promise<boolean>((ok, fail) => {
+        resolve = ok;
+        reject = fail;
+      });
+      const handler = vi.fn();
+      f.publisher.ownRun = () => ownership;
+      f.starter.attach({ "run.continue": handler } as unknown as BackgroundJobHandlers);
+      f.starter.take("run");
+      let stopped = false;
+      const stopping = f.starter.stop().then(() => {
+        stopped = true;
+      });
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      if (result === "failed") reject(new Error("ownership failed"));
+      else resolve(result === "owned");
+      await stopping;
+      expect(handler).not.toHaveBeenCalled();
+    },
+  );
+
   it("never holds one run's start behind another run, however slow", async () => {
     const f = fixture();
     let release!: () => void;

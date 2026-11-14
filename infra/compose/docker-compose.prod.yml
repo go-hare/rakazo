@@ -440,6 +440,7 @@ services:
         condition: service_healthy
 
   api:
+    stop_grace_period: 50m
     # The tag is what the updater moves. `docker compose pull` fetches it, `up -d` recreates onto
     # it, and the previous tag stays in .env so a rollback is one redeploy rather than a rebuild.
     #
@@ -538,50 +539,6 @@ services:
       # Probe every second while starting, so a deploy hands traffic over as soon as it can.
       start_period: 2m
       start_interval: 1s
-
-  worker:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-}
-    restart: unless-stopped
-    # Directly, not through pnpm, so a stop reaches it (see the api command).
-    working_dir: /app/apps/worker
-    command: ["node", "--enable-source-maps", "dist/index.js"]
-    # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
-    stop_grace_period: 50m
-    healthcheck:
-      test: ["CMD", "node", "dist/health-check.js"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 2m
-      # Probe every second while starting, so a deploy hands runs over as soon as it can.
-      start_interval: 1s
-    init: true
-    logging: *logging
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    pids_limit: 512
-    mem_limit: ${RAKAZO_WORKER_MEMORY_LIMIT:-2g}
-    environment:
-      <<: *app-environment
-      GRAPHILE_WORKER_CONCURRENCY:
-    volumes:
-      - appdata:/data
-    networks:
-      - app
-      - data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      api:
-        condition: service_healthy
 
   web:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}

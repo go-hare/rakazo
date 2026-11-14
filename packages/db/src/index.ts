@@ -24,6 +24,8 @@ export * from "./content-keys.js";
 export * from "./content-migration.js";
 export * from "./credential-secrets.js";
 export * from "./cross-space-communication.js";
+export * from "./daemon-live-ask.js";
+export * from "./daemon-machine-store.js";
 export * from "./database-access.js";
 export * from "./deferred-migrations.js";
 export {

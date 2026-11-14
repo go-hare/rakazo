@@ -341,19 +341,19 @@ class AuditShipTests(unittest.TestCase):
 
 class ServiceHealthTests(unittest.TestCase):
     def test_missing_stopped_and_unhealthy_services_fail(self):
-        self.assertEqual(service_health.service_failures([]), ["api container is missing", "worker container is missing"])
-        rows = [{"service": "api", "state": "running", "health": "healthy"}, {"service": "worker", "state": "running", "health": "unhealthy"}]
-        self.assertEqual(service_health.service_failures(rows), ["worker has no healthy running container"])
-        rows[1]["state"] = "exited"
-        rows[1]["health"] = "healthy"
+        self.assertEqual(service_health.service_failures([]), ["api container is missing"])
+        rows = [{"service": "api", "state": "running", "health": "unhealthy"}]
+        self.assertEqual(service_health.service_failures(rows), ["api has no healthy running container"])
+        rows[0]["state"] = "exited"
+        rows[0]["health"] = "healthy"
         self.assertEqual(len(service_health.service_failures(rows)), 1)
 
     def test_rolling_replacement_accepts_one_healthy_replica(self):
-        rows = [{"service": "api", "state": "running", "health": "healthy"}, {"service": "worker", "state": "exited", "health": ""}, {"service": "worker", "state": "running", "health": "healthy"}]
+        rows = [{"service": "api", "state": "exited", "health": ""}, {"service": "api", "state": "running", "health": "healthy"}]
         self.assertEqual(service_health.service_failures(rows), [])
 
     def test_point_in_time_recovery_is_checked_only_when_enabled(self):
-        healthy = [{"service": "api", "state": "running", "health": "healthy"}, {"service": "worker", "state": "running", "health": "healthy"}]
+        healthy = [{"service": "api", "state": "running", "health": "healthy"}]
         self.assertEqual(service_health.service_failures(healthy), [])
         stalled = [*healthy, {"service": "pitr", "state": "running", "health": "unhealthy"}]
         self.assertEqual(service_health.service_failures(stalled), ["pitr has no healthy running container"])

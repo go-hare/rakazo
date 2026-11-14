@@ -391,6 +391,7 @@ services:
         condition: service_healthy
 
   api:
+    stop_grace_period: 50m
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
@@ -466,36 +467,6 @@ services:
         condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
-
-  worker:
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile
-    # Directly, not through pnpm, so a stop reaches it (see the api command).
-    working_dir: /app/apps/worker
-    command: ["node", "--enable-source-maps", "dist/index.js"]
-    # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
-    stop_grace_period: 50m
-    healthcheck:
-      test: ["CMD", "node", "dist/health-check.js"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 2m
-    environment:
-      <<: *app-environment
-      GRAPHILE_WORKER_CONCURRENCY:
-    volumes:
-      - ../../data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      data-init:
-        condition: service_completed_successfully
-      # Reached once migrations have run and the login the worker uses exists.
-      api:
-        condition: service_healthy
 
   web:
     build:

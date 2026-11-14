@@ -20,7 +20,7 @@ cleanup() {
   trap - EXIT
   trap '' HUP INT TERM
   if (( STOP_ON_FAILURE )); then
-    "${compose[@]}" stop api worker supervisor || true
+    "${compose[@]}" stop api supervisor || true
   fi
   if [[ -n "$STAGE" ]]; then rm -rf -- "$STAGE" || true; fi
   exit "$status"
@@ -50,7 +50,7 @@ if [[ -e "$SRC/homes.tgz" || -L "$SRC/homes.tgz" ]]; then
   fi
 fi
 STOP_ON_FAILURE=1
-"${compose[@]}" stop api worker supervisor
+"${compose[@]}" stop api supervisor
 "${compose[@]}" up -d postgres
 until "${compose[@]}" exec -T postgres pg_isready -U rakazo >/dev/null 2>&1; do
   sleep 1

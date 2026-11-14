@@ -419,6 +419,7 @@ services:
         condition: service_healthy
 
   api:
+    stop_grace_period: 50m
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
     # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
@@ -507,48 +508,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
-
-  worker:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
-    restart: unless-stopped
-    # Directly, not through pnpm, so a stop reaches it (see the api command).
-    working_dir: /app/apps/worker
-    command: ["node", "--enable-source-maps", "dist/index.js"]
-    # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
-    stop_grace_period: 50m
-    healthcheck:
-      test: ["CMD", "node", "dist/health-check.js"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 2m
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    pids_limit: 512
-    mem_limit: 2g
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      <<: *app-environment
-      GRAPHILE_WORKER_CONCURRENCY:
-    volumes:
-      - appdata:/data
-    networks:
-      - app
-      - data
-    depends_on:
-      postgres:
-        condition: service_healthy
-      data-init:
-        condition: service_completed_successfully
-      supervisor:
-        condition: service_healthy
-      api:
-        condition: service_healthy
 
   web:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}

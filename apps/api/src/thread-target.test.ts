@@ -4,6 +4,7 @@ import { callClientNonce } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import * as daemonMachines from "./daemon-machines.js";
 import { reactToThreadMessage } from "./thread-reactions.js";
 import { threadSnapshot } from "./thread-snapshot.js";
 import { stopThreadRuns } from "./thread-stop.js";
@@ -4598,6 +4599,10 @@ describe("stopThreadRuns", () => {
       yield { type: "exit", code: 0 };
     });
     let nextEventSeq = 0;
+    let committed = false;
+    const cancelDaemonTurn = vi.spyOn(daemonMachines, "cancelDaemonTurn").mockImplementation(() => {
+      expect(committed).toBe(true);
+    });
     const transaction = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
@@ -4611,8 +4616,14 @@ describe("stopThreadRuns", () => {
       run: {
         findMany: vi.fn().mockResolvedValue([]),
         updateManyAndReturn: vi.fn().mockResolvedValue([
-          { id: "run-a", botId: "bot-a", threadId: "thread-1" },
-          { id: "run-b", botId: "bot-b", threadId: "thread-1" },
+          {
+            id: "run-a",
+            botId: "bot-a",
+            threadId: "thread-1",
+            deviceId: "device-a",
+            deviceTurnId: "turn-a",
+          },
+          { id: "run-b", botId: "bot-b", threadId: "thread-1", deviceId: "device-b" },
         ]),
         findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }),
       },
@@ -4651,9 +4662,12 @@ describe("stopThreadRuns", () => {
       },
     };
     const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
-        callback(transaction),
-      ),
+      $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) => {
+        const result = await callback(transaction);
+        expect(cancelDaemonTurn).not.toHaveBeenCalled();
+        committed = true;
+        return result;
+      }),
       // Simulate workers clearing leases / execution columns as soon as the
       // transaction commits. A post-commit lookup would now miss both sandboxes.
       computer: {
@@ -4687,6 +4701,12 @@ describe("stopThreadRuns", () => {
       target,
     );
 
+    expect(cancelDaemonTurn).toHaveBeenCalledExactlyOnceWith({
+      deviceId: "device-a",
+      deviceTurnId: "turn-a",
+      threadId: "thread-1",
+    });
+    cancelDaemonTurn.mockRestore();
     expect(transaction.computerExecutionLease.findMany).toHaveBeenCalledWith({
       where: { runId: { in: ["run-a", "run-b"] } },
       select: { computerId: true, botId: true, runId: true, fence: true },

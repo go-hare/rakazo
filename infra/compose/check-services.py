@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 
-def service_failures(rows, expected=("api", "worker"), optional=("pitr",)):
+def service_failures(rows, expected=("api",), optional=("pitr",)):
     failures = []
     for service in (*expected, *optional):
         states = [row for row in rows if row["service"] == service]

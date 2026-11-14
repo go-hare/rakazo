@@ -1,7 +1,7 @@
 import type { DesktopSetup } from "@rakazo/contracts";
 import type { BrowserWindow } from "electron";
 import type { DesktopUpdateController } from "./auto-update.js";
-import type { prepareHostComputer } from "./host-computer.js";
+import type { createDesktopDaemon } from "./daemon-launch.js";
 import type { LocalStackController } from "./local-stack.js";
 import type { UserDeviceAccess } from "./user-device.js";
 
@@ -21,6 +21,8 @@ export const desktop = {
   launchUpdateCheckScheduled: false,
   hostComputer: undefined,
   userDevices: undefined,
+  daemon: undefined,
+  refreshDaemon: undefined,
 } as {
   mainWindow: BrowserWindow | null;
   setupWindow: BrowserWindow | null;
@@ -34,8 +36,19 @@ export const desktop = {
   desktopUpdater: DesktopUpdateController;
   launchUpdateCheckScheduled: boolean;
   localStack: LocalStackController;
-  hostComputer: Awaited<ReturnType<typeof prepareHostComputer>> | undefined;
+  hostComputer:
+    | {
+        connection: { url: string; token: string };
+        isEnabled: () => boolean;
+        activate: (value: boolean) => void;
+        grant: () => Promise<void>;
+        revoke: () => Promise<void>;
+        close: () => Promise<void>;
+      }
+    | undefined;
   userDevices: UserDeviceAccess | undefined;
+  daemon: ReturnType<typeof createDesktopDaemon> | undefined;
+  refreshDaemon: (() => void) | undefined;
 };
 
 export const appWindowTargets = new WeakMap<BrowserWindow, string>();

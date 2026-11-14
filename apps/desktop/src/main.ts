@@ -2,13 +2,8 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { startHostComputerServer } from "../../../host-computer/src/host-computer-server.ts";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
-import type {
-  DesktopReachability,
-  DesktopSetup,
-  RakazoDesktopDevice,
-} from "@rakazo/contracts";
+import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
 import type { BrowserWindow, Session } from "electron";
 import {
   app,
@@ -46,9 +41,9 @@ import type { ElectronAutoUpdater } from "./auto-update.js";
 import { DesktopUpdateController } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
+import { createDesktopDaemon, daemonEntry } from "./daemon-launch.js";
 import { appWindowTargets, desktop } from "./desktop-state.js";
 import { runDocker } from "./docker-cli.js";
-import { prepareHostComputer } from "./host-computer.js";
 import {
   createDesktopHostScreen,
   screenDriverInstaller,
@@ -348,6 +343,25 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     return false;
   }
 }
+let daemonCookieSession: Session | undefined;
+const onDaemonCookiesChanged = () => desktop.refreshDaemon?.();
+function syncDaemonSession() {
+  const origin = remoteServerOrigin();
+  const win = desktop.mainWindow;
+  const currentSession = origin && win && !win.isDestroyed() ? win.webContents.session : undefined;
+  if (daemonCookieSession !== currentSession) {
+    daemonCookieSession?.cookies.removeListener("changed", onDaemonCookiesChanged);
+    daemonCookieSession = currentSession;
+    daemonCookieSession?.cookies.on("changed", onDaemonCookiesChanged);
+  }
+  if (!origin || !currentSession) {
+    desktop.daemon?.stop();
+    return;
+  }
+  void desktop.daemon?.select(origin, (url, init) =>
+    currentSession.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+  );
+}
 function syncHostComputerAccess() {
   desktop.hostComputer?.activate(
     desktop.currentSetup?.mode === "new" &&
@@ -355,7 +369,8 @@ function syncHostComputerAccess() {
       !desktop.mainWindow.isDestroyed() &&
       appWindowTargets.get(desktop.mainWindow) === desktop.localStack.webUrl(),
   );
-  void desktop.userDevices?.select(remoteServerOrigin()).catch(() => undefined);
+  void desktop.userDevices?.select(remoteServerOrigin()).then(() => desktop.refreshDaemon?.()).catch(() => undefined);
+  syncDaemonSession();
   installApplicationMenu();
 }
 /** The trust boundary: only a click on Allow here lets bots use this computer. */
@@ -512,11 +527,6 @@ app.whenReady().then(async () => {
       ? (update) => verifyDownloadedLinuxUpdate(update, (url, signal) => net.fetch(url, { signal }))
       : undefined,
   );
-  try {
-    desktop.hostComputer = await prepareHostComputer(userDataDir);
-  } catch {
-    /* Local access fails closed; Docker remains available. */
-  }
   const screenDriver = screenDriverRelease(process.platform);
   hostScreen =
     screenDriver &&
@@ -546,6 +556,16 @@ app.whenReady().then(async () => {
         return { png: fitted.toPNG(), ...fitted.getSize() };
       },
     });
+  desktop.refreshDaemon = syncDaemonSession;
+  desktop.daemon = createDesktopDaemon({
+    entry: daemonEntry({
+      appPath: app.getAppPath(),
+      packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    }),
+    userDataDir,
+    name: () => deviceName(),
+  });
   desktop.userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
@@ -564,15 +584,10 @@ app.whenReady().then(async () => {
         ...init,
         bypassCustomProtocolHandlers: true,
       }),
-    connect: (origin, token, events) =>
-      startHostComputerServer({
-        mode: "connect",
-        serverUrl: origin,
-        token,
-        root: path.join(userDataDir, "computers"),
-        screen: hostScreen,
-        ...events,
-      }),
+    connect: () => ({
+      close() {},
+      cancelAll() {},
+    }),
   });
   desktop.localStack = new LocalStackController({
     hostComputer: desktop.hostComputer?.connection,
@@ -728,7 +743,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("desktop.device.setAllowed", async (event, allowed: unknown) => {
     const origin = remoteDeviceOrigin(event);
     if (origin === null || typeof allowed !== "boolean") return null;
+    if (!allowed) desktop.daemon?.stop();
     await desktop.userDevices?.setAllowed(origin, allowed);
+    desktop.refreshDaemon?.();
     return deviceState(remoteDeviceOrigin(event));
   });
   ipcMain.handle(
@@ -892,6 +909,7 @@ app.on("before-quit", () => {
   desktop.hostComputer?.activate(false);
   void desktop.hostComputer?.close();
   desktop.userDevices?.close();
+  desktop.daemon?.stop();
   void hostScreen?.close();
   desktop.localStack?.abort();
 });

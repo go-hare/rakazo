@@ -9,7 +9,6 @@ const COMPOSE = "docker compose --env-file .env -f infra/compose/docker-compose.
 const APP_IMAGE = "ghcr.example.test/rakazo/app:local";
 // Each rolled service gains a new container, which must pass its health check before the old
 // one stops; the rest of the stack is reconciled afterwards.
-const WORKERS = "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}}";
 const startBeside = (service: string) => [
   `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
   `${COMPOSE} ps --all --quiet ${service}`,
@@ -22,36 +21,19 @@ const rolloutSteps = (revision: string) => [
   `${COMPOSE} config --quiet`,
   `${COMPOSE} config`,
   `${COMPOSE} build --build-arg GIT_SHA=${revision}`,
-  // No worker is still draining from an earlier deploy.
-  `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old`,
   // Only this container gets the database owner login; the old API keeps serving meanwhile.
   `${COMPOSE} config --services`,
   `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
   ...["api", "web"].flatMap((service) => [
     `${COMPOSE} ps --all --quiet ${service}`,
     ...startBeside(service),
-    `docker stop --time 30 ${service}-old`,
+    `docker stop --time ${service === "api" ? 3000 : 30} ${service}-old`,
     `docker rm ${service}-old`,
   ]),
-  // The old worker is told to finish its jobs instead of being stopped.
-  `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old`,
-  `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old`,
-  ...startBeside("worker"),
-  "docker update --restart no worker-old",
-  "docker kill --signal SIGTERM worker-old",
   `${COMPOSE} config --services`,
   `${COMPOSE} up -d --no-deps --remove-orphans api`,
 ];
-// After a healthy deploy, the deploy waits for the old worker to finish and removes it.
-const finishDraining = [
-  `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old worker-new`,
-  "docker stop worker-old",
-  "docker rm worker-old",
-];
+const finishDraining: string[] = [];
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
@@ -91,9 +73,10 @@ function rollout(commands: string[]) {
     .map((line) => line.split(" @ ")[0] ?? line)
     .filter(
       (line) =>
-        / (config|build|up|ps) /.test(`${line} `) ||
-        line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=") ||
-        /^docker (inspect|stop|rm|update|kill) /.test(line),
+        !line.includes(" ps --all --orphans --quiet") &&
+        (/ (config|build|up|ps) /.test(`${line} `) ||
+          line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=") ||
+          /^docker (inspect|stop|rm|update|kill) /.test(line)),
     );
 }
 
@@ -154,8 +137,14 @@ if [[ ! -e "$containers" ]]; then
   [[ -z "\${EXTRA_WORKER:-}" ]] || echo "worker-older no \${EXTRA_WORKER}" >>"$containers"
 fi
 service="\${*: -1}"
-if [[ "$*" == *" ps --all --quiet "* ]]; then
+if [[ "$*" == *" ps --all --orphans --quiet"* ]]; then
+  [[ -z "\${LEGACY_WORKER:-}" ]] || awk '$1 ~ /^worker-/ { print $1 }' "$containers"
+elif [[ "$*" == *" ps --all --quiet "* ]]; then
   awk -v prefix="$service-" 'index($1, prefix) == 1 { print $1 }' "$containers"
+fi
+if [[ "$1" == inspect && "$*" == *com.docker.compose.service* ]]; then
+  for name in "\${@:4}"; do awk -v name="$name" '$1 == name { print $1, "worker", $2 }' "$containers"; done
+  exit 0
 fi
 if [[ "$*" == *" --scale "* ]]; then
   name="$service-new"
@@ -294,6 +283,21 @@ describe("production deploy script", () => {
     ]);
   });
 
+  it("drains an orphaned worker before removing orphans", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ LEGACY_WORKER: "1" }).status).toBe(0);
+    const commands = deploy.commands().map((line) => line.split(" @ ")[0]!);
+    const signal = commands.indexOf("docker kill --signal SIGTERM worker-old");
+    const stop = commands.indexOf("docker stop --time 3000 worker-old");
+    const remove = commands.indexOf("docker rm worker-old");
+    const reconcile = commands.findIndex((line) => line.includes("--remove-orphans"));
+    expect(signal).toBeGreaterThan(commands.indexOf("docker stop --time 3000 api-old"));
+    expect(stop).toBeGreaterThan(signal);
+    expect(remove).toBeGreaterThan(stop);
+    expect(reconcile).toBeGreaterThan(remove);
+  });
+
   it("runs migrations when Compose is still listing services after migrate", () => {
     const deploy = fixture();
     commit(deploy.upstream, "next");
@@ -361,7 +365,7 @@ describe("production deploy script", () => {
     expect(deploy.commands()).toContainEqual(
       expect.stringMatching(/ up -d --no-deps --remove-orphans api @ first$/),
     );
-    expect(commands.slice(-2)).toEqual(["docker stop worker-old", "docker rm worker-old"]);
+    expect(commands.some((line) => line.includes(" worker"))).toBe(false);
   });
 
   it("rebuilds the previous revision when the running image is unknown", () => {
@@ -477,7 +481,7 @@ describe("production deploy script", () => {
     const commands = rollout(deploy.commands());
     expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait api`);
     expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait web`);
-    expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
+    expect(commands.some((line) => line.includes(" worker"))).toBe(false);
     expect(
       commands.filter((line) => line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=")),
     ).toHaveLength(1);
@@ -549,51 +553,11 @@ describe("production deploy script", () => {
     ).toHaveLength(1);
     expect(commands).toContain(`${COMPOSE} up -d --wait postgres`);
     // The rollback still replaces the failed release's containers.
-    expect(commands.filter((line) => line.startsWith("docker stop --time 30 api-"))).toEqual([
-      "docker stop --time 30 api-old",
-      "docker stop --time 30 api-new",
+    expect(commands.filter((line) => line.startsWith("docker stop --time 3000 api-"))).toEqual([
+      "docker stop --time 3000 api-old",
+      "docker stop --time 3000 api-new",
     ]);
-    // The failed release's worker stops claiming jobs, and the restored one starts once it and
-    // the worker the deploy replaced have both exited.
-    const failed = commands.indexOf("docker kill --signal SIGTERM worker-new");
-    expect(failed).toBeGreaterThan(commands.indexOf("docker kill --signal SIGTERM worker-old"));
-    expect(
-      commands
-        .slice(failed)
-        .filter((line) => /^docker (stop|rm) |up -d --no-deps --wait worker$/.test(line)),
-    ).toEqual([
-      "docker stop worker-old worker-new",
-      "docker rm worker-old worker-new",
-      `${COMPOSE} up -d --no-deps --wait worker`,
-    ]);
-  });
-
-  it("waits for a worker an earlier deploy left draining before migrating", () => {
-    const deploy = fixture();
-    commit(deploy.upstream, "next");
-    expect(deploy.run({ EXTRA_WORKER: "running" }).status).toBe(0);
-    const commands = rollout(deploy.commands());
-    const migrate = commands.indexOf(
-      `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
-    );
-    expect(commands.slice(migrate - 4, migrate)).toEqual([
-      `${WORKERS} worker-old worker-older`,
-      "docker stop worker-older",
-      "docker rm worker-older",
-      `${COMPOSE} config --services`,
-    ]);
-  });
-
-  it("never scales up beside a worker that may have exited while a rollback drains it", () => {
-    const deploy = fixture();
-    commit(deploy.upstream, "unhealthy");
-    expect(deploy.run({ FAIL_HEALTH: "1", DRAIN_EXITS: "1" }).status).toBe(1);
-    const commands = rollout(deploy.commands());
-    const replaced = commands.indexOf("docker kill --signal SIGTERM worker-old");
-    const removed = commands.indexOf("docker rm worker-old worker-new");
-    expect(removed).toBeGreaterThan(replaced);
-    expect(commands.slice(replaced).some((line) => line.includes("--scale worker"))).toBe(false);
-    expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
+    expect(commands.some((line) => line.includes(" worker"))).toBe(false);
   });
 
   it("keeps the old container serving when the new one fails its health check", () => {
@@ -604,7 +568,7 @@ describe("production deploy script", () => {
     expect(result.stderr).toContain("did not become healthy");
     const commands = rollout(deploy.commands());
     expect(commands).toContain("docker rm --force api-new");
-    expect(commands).not.toContain("docker stop --time 30 api-old");
+    expect(commands).not.toContain("docker stop --time 3000 api-old");
     expect(deploy.head()).toBe(deploy.first);
   });
 

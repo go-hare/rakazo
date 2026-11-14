@@ -88,6 +88,26 @@ export interface ExecutorDeps {
   codexCatalog?: CodexLiveCatalog;
   /** The run starter's connected desktop; absent never offers user_computer_shell. */
   userDevices?: UserDeviceGateway;
+  /**
+   * Executes assigned machine turns under the existing leases. Before sending, atomically
+   * record the turn on the fenced run and persist its command. An unassigned result means
+   * no command was submitted; handled means the implementation finalized the fenced run.
+   * Uncertain turns must be isolated and settled without re-execution, including after a
+   * process crash, lost connection, or abort. Do not inject until recovery provides that.
+   */
+  daemonRuns?: {
+    run(input: {
+      runId: string;
+      attemptId: string;
+      leaseOwner: string;
+      leaseFence: number;
+      botId: string;
+      spaceId: string;
+      threadId: string;
+      userId: string;
+      signal: AbortSignal;
+    }): Promise<"unassigned" | "handled">;
+  };
   /** Aborted when createApp stop() begins so in-flight continueRun boot waits exit promptly. */
   shutdownSignal?: AbortSignal;
   /** Set by withRunLease for one attempt; that run's history writes carry its lease. */

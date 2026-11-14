@@ -176,6 +176,60 @@ describe("remote computer access", () => {
     expect(clients).toHaveLength(0);
   });
 
+  it("revokes a pairing returned after the server is deselected", async () => {
+    let finish!: (response: Response) => void;
+    let started!: () => void;
+    const requested = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const revoke = vi.fn(
+      async (_url: string, _init: RequestInit) => new Response(null, { status: 204 }),
+    );
+    const { access, clients } = setup({
+      fetch: async (url, init) => {
+        if (url.endsWith("/api/devices/pair")) {
+          started();
+          return new Promise<Response>((resolve) => {
+            finish = resolve;
+          });
+        }
+        return revoke(url, init);
+      },
+    });
+    await access.select(origin);
+    await requested;
+    const pairing = access.pair();
+    await access.select(null);
+    finish(Response.json({ deviceId: "old", token: "sample-credential", userId: "user-1" }));
+    await pairing;
+    expect(clients).toHaveLength(0);
+    expect(await readPairedDevice(userData, origin, cipher)).toBeNull();
+    expect(revoke).toHaveBeenCalledWith(
+      `${origin}/api/devices/self`,
+      expect.objectContaining({
+        method: "DELETE",
+        headers: { authorization: "Bearer sample-credential" },
+      }),
+    );
+  });
+
+  it("ignores an authorization prompt answered after switching servers", async () => {
+    let answer!: (allowed: boolean) => void;
+    const { access, clients } = setup({
+      confirm: () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    });
+    await access.select(origin);
+    await access.pair();
+    const authorization = clients[0]!.authorize();
+    await access.select(null);
+    answer(true);
+    expect(await authorization).toBe(false);
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
+  });
+
   it("pairs with the window session on its own and connects without granting anything", async () => {
     const confirm = vi.fn(async () => true);
     const { access, requests, clients } = setup({ confirm });

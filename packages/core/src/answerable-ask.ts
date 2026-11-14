@@ -15,7 +15,7 @@ export function answerableAskMessageIds(snapshot: AskSnapshot | null): Set<strin
   if (!snapshot) return answerable;
   const waitingRunIds = new Set(
     (snapshot.activeRuns ?? (snapshot.run ? [snapshot.run] : []))
-      .filter((run) => run.status === "waiting_input")
+      .filter((run) => run.status === "waiting_input" || run.status === "running")
       .map((run) => run.id),
   );
   for (const message of snapshot.messages) {

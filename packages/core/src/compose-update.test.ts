@@ -181,7 +181,6 @@ describe("compose argv construction", () => {
         ...target.composeFiles,
         "pull",
         "api",
-        "worker",
         "web",
       ],
     });
@@ -212,27 +211,13 @@ describe("compose argv construction", () => {
   });
 
   it("recreates and pulls the target's own services when an overlay adds one", () => {
-    const withSupervisor = { ...target, services: ["api", "worker", "web", "supervisor"] };
-    expect(composePullArgv(withSupervisor).args.slice(-4)).toEqual([
-      "api",
-      "worker",
-      "web",
-      "supervisor",
-    ]);
-    expect(composeUpArgv(withSupervisor).args.slice(-4)).toEqual([
-      "api",
-      "worker",
-      "web",
-      "supervisor",
-    ]);
+    const withSupervisor = { ...target, services: ["api", "web", "supervisor"] };
+    expect(composePullArgv(withSupervisor).args.slice(-3)).toEqual(["api", "web", "supervisor"]);
+    expect(composeUpArgv(withSupervisor).args.slice(-3)).toEqual(["api", "web", "supervisor"]);
   });
 
   it("falls back to the built-in services when the target names none", () => {
-    expect(composeUpArgv({ ...target, services: [] }).args.slice(-3)).toEqual([
-      "api",
-      "worker",
-      "web",
-    ]);
+    expect(composeUpArgv({ ...target, services: [] }).args.slice(-2)).toEqual(["api", "web"]);
   });
 
   it("carries the overlay files and extra services into the update plan and its recovery", () => {
@@ -242,7 +227,7 @@ describe("compose argv construction", () => {
         "/srv/rakazo/infra/compose/docker-compose.prod.yml",
         "/srv/rakazo/ops/compose/docker-compose.sandbox.yml",
       ],
-      services: ["api", "worker", "web", "supervisor"],
+      services: ["api", "web", "supervisor"],
     };
     for (const strategy of ["pull", "build"] as const) {
       const steps = composeUpdatePlan({ strategy, target: overlaid });
@@ -298,7 +283,7 @@ describe("compose argv construction", () => {
 
   it("names the services explicitly so a bare up cannot sweep the whole project", () => {
     const args = composeUpArgv(target).args;
-    expect(args.slice(-3)).toEqual(["api", "worker", "web"]);
+    expect(args.slice(-2)).toEqual(["api", "web"]);
   });
 });
 

@@ -21,6 +21,7 @@ import {
   transientRunEventsWhere,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { cancelDaemonTurn } from "./daemon-machines.js";
 import type { ThreadTarget } from "./thread-target.js";
 
 /** A bare "stop" or "stop now" with nothing attached: the owner's Stop, sent as text. */
@@ -91,6 +92,8 @@ export function cancelThreadRuns(
         sourceMessageId: true,
         routineId: true,
         routine: { select: { name: true } },
+        deviceId: true,
+        deviceTurnId: true,
       },
     });
     const ids = cancelled.map((run) => run.id);
@@ -201,6 +204,11 @@ export function cancelThreadRuns(
       leases,
       eventSeq,
       stoppedHelpers: cancelled.filter((run) => run.trigger === BACKGROUND_HELPER_TRIGGER),
+      daemonRuns: cancelled.flatMap((run) =>
+        run.deviceId && run.deviceTurnId
+          ? [{ deviceId: run.deviceId, deviceTurnId: run.deviceTurnId, threadId: run.threadId }]
+          : [],
+      ),
     };
   };
 }
@@ -216,8 +224,10 @@ export async function finishThreadStop(
     leases,
     eventSeq,
     stoppedHelpers,
+    daemonRuns,
   }: Awaited<ReturnType<ReturnType<typeof cancelThreadRuns>>>,
 ) {
+  for (const run of daemonRuns) cancelDaemonTurn(run);
   if (eventSeq !== null) {
     // The events are durable; subscribers refetch from their persisted cursor.
     await deps.events.notify(target.threadId, eventSeq).catch((error) => {

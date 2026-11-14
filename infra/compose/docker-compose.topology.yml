@@ -69,6 +69,7 @@ services:
       retries: 30
 
   api:
+    stop_grace_period: 50m
     image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
     # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
     # process before its graceful shutdown finishes in-flight requests and jobs.
@@ -164,24 +165,6 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
-
-  worker:
-    image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
-    # Directly, not through pnpm, so a stop reaches it (see the api command).
-    working_dir: /app/apps/worker
-    command: ["node", "--enable-source-maps", "dist/index.js"]
-    healthcheck:
-      test: ["CMD", "node", "dist/health-check.js"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 2m
-    environment: *app-environment
-    volumes:
-      - appdata:/data
-    depends_on:
-      api:
-        condition: service_healthy
 
 volumes:
   pgdata:

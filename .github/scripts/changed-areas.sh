@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Prints which CI areas a pull request's merge commit can affect, as GitHub step outputs.
-# web: anything beyond the mobile app and agent notes. e2e: web, minus docs/ and the worker, which the E2E
-# server never loads (it imports the server adapters in-process). server (the Postgres journeys):
+# web: anything beyond the mobile app and agent notes. e2e: web, minus docs/. server (the Postgres journeys):
 # web, minus www, docs/, and the browser and desktop clients and their UI packages, which no
 # journey loads.
 # native: the desktop app, the computer, screen and sandbox adapters its native tests load, and
@@ -41,7 +40,7 @@ while IFS= read -r file; do
       native=true
       compose=true
       ;;
-    apps/desktop/* | scripts/pnpm*.mjs | scripts/setup-worktree*.mjs | \
+    apps/desktop/* | daemon/* | scripts/pnpm*.mjs | scripts/setup-worktree*.mjs | \
       packages/adapter-kit/* | packages/core/src/node/* | \
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
       packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
@@ -61,7 +60,6 @@ while IFS= read -r file; do
       e2e=true
       continue
       ;;
-    apps/worker/*) web=true; server=true; continue ;;
     packages/adapters/*) web=true; e2e=true; server=true; continue ;;
     */*) ;;
     *.md) continue ;;

@@ -93,6 +93,7 @@ model User {
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
   devices                     UserDevice[]
+  daemonMachines              DaemonMachine[]
 
   @@unique([email])
   @@map("user")
@@ -964,6 +965,8 @@ model Bot {
   computerId        String?
   computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean           @default(false)
+  /// Set while a submitted machine turn may still be running after disconnect.
+  daemonUncertainUntil DateTime?
   voiceId           String?
   autoSpeak         Boolean           @default(false)
   modelProvider     String?
@@ -1011,6 +1014,75 @@ model Bot {
   @@map("bots")
   messagingInstallations MessagingInstallation[]
   messagingInstallSessions MessagingInstallSession[]
+  daemonAssignment DaemonAssignment?
+}
+
+model DaemonMachine {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name String
+  tokenHash String @unique
+  /// Retained after session deletion so a desktop token cannot become a legacy token.
+  sessionId String?
+  revokedAt DateTime?
+  connectionId String?
+  leaseExpiresAt DateTime?
+  assignments DaemonAssignment[]
+  commands DaemonCommand[]
+  @@index([userId])
+  @@map("daemon_machines")
+}
+
+model DaemonAssignment {
+  botId String @id
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  machineId String
+  machine DaemonMachine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  cwd String
+  agent String?
+  @@index([machineId])
+  @@map("daemon_assignments")
+}
+
+model DaemonLiveAsk {
+  id String @id
+  spaceId String
+  threadId String
+  runId String
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+  attemptId String
+  leaseFence Int
+  machineId String
+  connectionId String
+  turnId String
+  requestId String
+  messageId String @unique
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  kind String
+  expiresAt DateTime
+  answeredAt DateTime?
+  @@unique([machineId, turnId, requestId])
+  @@index([runId])
+  @@map("daemon_live_asks")
+}
+
+model DaemonCommand {
+  id String @id
+  machineId String
+  machine DaemonMachine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  spaceId String
+  threadId String
+  turnId String
+  type String
+  payload Json
+  status String @default("pending")
+  connectionId String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  @@index([machineId, status, createdAt])
+  @@index([machineId, turnId])
+  @@map("daemon_commands")
 }
 
 model BotSection {
@@ -1153,6 +1225,7 @@ model Message {
   clientNonce      String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
+  daemonLiveAsk         DaemonLiveAsk?
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
@@ -1244,6 +1317,9 @@ model Run {
   startedAt            DateTime?
   // The occurrence a recurring timer run was due at, recorded at its first start only when it started late.
   lateSince            DateTime?
+  /// Daemon machine that owns this run, when the turn is not executed here.
+  deviceId             String?
+  deviceTurnId         String?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
@@ -1251,6 +1327,7 @@ model Run {
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
+  daemonLiveAsks       DaemonLiveAsk[]
   effects              ExternalEffect[]
   steeringMessages     SteeringMessage[]
   externalMessage      ExternalMessage?

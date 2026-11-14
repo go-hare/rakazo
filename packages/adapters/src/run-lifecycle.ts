@@ -314,6 +314,7 @@ export async function requeueRunAfterShutdown(
       status: "running",
       leaseOwner: workerId,
       leaseFence: fence,
+      deviceTurnId: null,
     },
     data: {
       status: "queued",
@@ -370,6 +371,7 @@ export async function claimRun(
   run: {
     id: string;
     spaceId: string;
+    botId: string;
     status: string;
     checkpoint: string | null;
     leaseFence: number;
@@ -380,33 +382,47 @@ export async function claimRun(
   const now = new Date();
   // A Space being deleted starts nothing; its runs wait for the deletion to end or be called
   // off. Its lock comes before the run row, so a claim committing meanwhile is seen.
-  const leased = await deps.prisma.$transaction(async (tx) =>
-    !(await spaceTakesWork(tx, run.spaceId))
-      ? { count: 0 }
-      : tx.run.updateMany({
-          where: {
-            id: run.id,
-            ...continueRunClaimFence(run),
-            AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
-            OR: [
-              { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
-              {
-                status: { in: ["leased", "running"] },
-                leaseExpiresAt: { lte: now },
-              },
-            ],
+  const leased = await deps.prisma.$transaction(async (tx) => {
+    if (!(await spaceTakesWork(tx, run.spaceId))) return { count: 0 };
+    const bots = await tx.$queryRaw<
+      Array<{ daemonUncertainUntil: Date | null }>
+    >`SELECT "daemonUncertainUntil" FROM bots WHERE id = ${run.botId} FOR UPDATE`;
+    const until = bots[0]?.daemonUncertainUntil;
+    if (until && until.getTime() > Date.now()) return { count: 0 };
+    const busy = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM runs
+      WHERE "botId" = ${run.botId} AND status = 'running' AND "deviceTurnId" IS NOT NULL
+        AND id <> ${run.id}
+      FOR UPDATE`;
+    if (busy.length) return { count: 0 };
+    return tx.run.updateMany({
+      where: {
+        id: run.id,
+        botId: run.botId,
+        // A submitted machine turn may still be running after its lease expires.
+        // Its recovery must settle it, never execute the run a second time.
+        deviceTurnId: null,
+        ...continueRunClaimFence(run),
+        AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
+        OR: [
+          { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
+          {
+            status: { in: ["leased", "running"] },
+            leaseExpiresAt: { lte: now },
           },
-          data: {
-            status: "leased",
-            leaseOwner: workerId,
-            leaseFence: fence,
-            leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
-            error: null,
-            checkpoint: null,
-            wakeAt: null,
-          },
-        }),
-  );
+        ],
+      },
+      data: {
+        status: "leased",
+        leaseOwner: workerId,
+        leaseFence: fence,
+        leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
+        error: null,
+        checkpoint: null,
+        wakeAt: null,
+      },
+    });
+  });
   if (leased.count !== 1) return undefined;
 
   const current = await deps.prisma.run.findUniqueOrThrow({

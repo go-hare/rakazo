@@ -1,195 +1,135 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
-import {
-  Button,
-  Field,
-  FieldLabel,
-  Input,
-  Label,
-  NativeSelect,
-  NativeSelectOption,
-  Switch,
-} from "@rakazo/ui-web";
-import { Trash2 } from "lucide-react";
+import type { Bot } from "@rakazo/contracts";
+import { Button, Field, FieldLabel, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useCallback, useEffect, useId, useState } from "react";
-import { desktopBridge } from "../lib/desktop";
+import type { DaemonMachine, DaemonPin } from "../lib/daemon-machines";
+import { listDaemonMachines, pinDaemonMachine } from "../lib/daemon-machines";
 import { rpc } from "../lib/rpc";
-import { listUserDevices, pairUserDevice, removeUserDevice } from "../lib/user-devices";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
-
-type ThisComputer = { allowed: boolean; setAllowed: (allowed: boolean) => Promise<unknown> };
-
-/** A remote server pairs this computer; the app-managed local stack runs bots on it directly. */
-async function thisComputerAccess(
-  desktop: RakazoDesktop | undefined,
-): Promise<ThisComputer | null> {
-  const device = desktop?.device;
-  const paired = await device?.state().catch(() => null);
-  if (device && paired) return { allowed: paired.allowed, setAllowed: device.setAllowed };
-  const computer = desktop?.computer;
-  if (!computer?.managesHostChoice) return null;
-  const me = await rpc.me();
-  if (!me.canChooseHostComputer) return null;
-  return {
-    allowed: me.computerHost === "this-mac",
-    setAllowed: (allowed) => (allowed ? computer.requestAccess() : computer.revokeAccess()),
-  };
-}
 
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
-  const desktop = desktopBridge();
-  const [devices, setDevices] = useState<UserDeviceSummary[]>([]);
-  const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
+  const [machines, setMachines] = useState<DaemonMachine[]>([]);
+  const [pins, setPins] = useState<Record<string, DaemonPin>>({});
+  const [bots, setBots] = useState<Bot[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [paired, setPaired] = useState<{ token: string } | null>(null);
-  const [bots, setBots] = useState<Bot[]>([]);
-  const switchId = useId();
-  const nameId = useId();
+  const cwdId = useId();
 
   const load = useCallback(async () => {
-    const [listed, local, listedBots] = await Promise.all([
-      listUserDevices().catch(() => null),
-      // A failed profile read keeps the last known switch rather than hiding it.
-      thisComputerAccess(desktop).catch(() => undefined),
+    const [listed, listedBots] = await Promise.all([
+      listDaemonMachines().catch(() => null),
       rpc.bots.list().catch(() => null),
     ]);
-    if (listed) setDevices(listed);
-    if (local !== undefined) setThisComputer(local);
+    if (listed) {
+      setMachines(listed.machines);
+      setPins(listed.pins);
+    }
     if (listedBots) setBots(listedBots);
-  }, [desktop]);
+  }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function run(action: () => Promise<unknown>, failure: string) {
+  async function save(botId: string, machineId: string, cwd: string, agent: string) {
+    const directory = cwd.trim();
+    if (machineId && !directory) return;
     setPending(true);
     setError(null);
     try {
-      await action();
+      await pinDaemonMachine(botId, machineId, directory, agent);
     } catch {
-      setError(failure);
+      setError(t`Could not change`);
     } finally {
       await load();
       setPending(false);
     }
   }
 
-  const command = paired
-    ? `host-computer --server ${location.origin} --token ${paired.token} --root /var/lib/rakazo`
-    : "";
-
   return (
     <SettingsGroup title={<Trans>Computers</Trans>} data-testid="computer-devices">
-      {thisComputer ? (
+      <p className="px-4 pt-3 text-body-sm text-muted-foreground">
+        <Trans>On that computer, run</Trans> <code>rakazo-daemon login {location.origin}</code>
+      </p>
+      {machines.map((machine) => (
         <SettingsRow
-          label={
-            <Label htmlFor={switchId} className="text-body font-normal text-foreground">
-              <Trans>Let bots use this computer</Trans>
-            </Label>
-          }
-          control={
-            <Switch
-              id={switchId}
-              data-testid="this-computer-toggle"
-              checked={thisComputer.allowed}
-              disabled={pending}
-              onCheckedChange={(allowed) =>
-                void run(() => thisComputer.setAllowed(allowed), t`Could not change`)
-              }
-            />
-          }
-        />
-      ) : null}
-      {devices.map((device) => (
-        <SettingsRow
-          key={device.deviceId}
+          key={machine.id}
           label={
             <p className="flex min-w-0 items-baseline gap-2">
-              <span className="truncate">{device.name}</span>
+              <span className="truncate">{machine.name}</span>
               <span className="shrink-0 text-body-sm text-muted-foreground">
-                {device.connected ? <Trans>Connected</Trans> : <Trans>Offline</Trans>}
+                {machine.online ? <Trans>Connected</Trans> : <Trans>Offline</Trans>}
               </span>
             </p>
           }
-          control={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t`Remove ${device.name}`}
-              disabled={pending}
-              className="text-destructive hover:text-destructive"
-              onClick={() => void run(() => removeUserDevice(device.deviceId), t`Could not remove`)}
-            >
-              <Trash2 />
-            </Button>
-          }
         />
       ))}
-      <form
-        className="grid gap-2 px-4 py-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const trimmed = name.trim();
-          if (!trimmed) return;
-          void run(async () => {
-            const created = await pairUserDevice(trimmed);
-            setPaired({ token: created.token });
-            setName("");
-          }, t`Could not add`);
-        }}
-      >
-        <Field>
-          <FieldLabel htmlFor={nameId}>
-            <Trans>Name</Trans>
-          </FieldLabel>
-          <Input
-            id={nameId}
-            value={name}
-            maxLength={128}
-            disabled={pending}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </Field>
-        <Button type="submit" size="sm" disabled={pending || !name.trim()}>
-          <Trans>Add machine</Trans>
-        </Button>
-      </form>
-      {devices.length > 1
-        ? bots.map((bot) => (
-            <SettingsRow
-              key={bot.id}
-              label={<span className="truncate">{bot.name}</span>}
-              control={
-                <NativeSelect
-                  aria-label={t`${bot.name} runs on`}
-                  value={bot.userDeviceId ?? ""}
-                  disabled={pending}
-                  onChange={(event) => {
-                    const userDeviceId = event.target.value || null;
-                    void run(
-                      () => rpc.bots.update({ botId: bot.id, userDeviceId }),
-                      t`Could not change`,
-                    );
-                  }}
-                >
-                  <NativeSelectOption value="">{t`Most recently connected`}</NativeSelectOption>
-                  {devices.map((device) => (
-                    <NativeSelectOption key={device.deviceId} value={device.deviceId}>
-                      {device.name}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              }
-            />
-          ))
+      {machines.length > 0
+        ? bots.map((bot) => {
+            const pin = pins[bot.id];
+            return (
+              <SettingsRow
+                key={bot.id}
+                label={<span className="truncate">{bot.name}</span>}
+                control={
+                  <form
+                    className="flex min-w-0 items-center gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const data = new FormData(event.currentTarget);
+                      void save(
+                        bot.id,
+                        String(data.get("machine") ?? ""),
+                        String(data.get("cwd") ?? ""),
+                        String(data.get("agent") ?? "claude"),
+                      );
+                    }}
+                  >
+                    <NativeSelect
+                      name="machine"
+                      aria-label={t`${bot.name} runs on`}
+                      defaultValue={pin?.machineId ?? ""}
+                      disabled={pending}
+                    >
+                      <NativeSelectOption value="">{t`Server`}</NativeSelectOption>
+                      {machines.map((machine) => (
+                        <NativeSelectOption key={machine.id} value={machine.id}>
+                          {machine.name}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                    <NativeSelect
+                      name="agent"
+                      aria-label={t`${bot.name} agent`}
+                      defaultValue={pin?.agent ?? "claude"}
+                      disabled={pending}
+                    >
+                      <NativeSelectOption value="claude">claude</NativeSelectOption>
+                      <NativeSelectOption value="codex">codex</NativeSelectOption>
+                      <NativeSelectOption value="grok">grok</NativeSelectOption>
+                    </NativeSelect>
+                    <Field>
+                      <FieldLabel htmlFor={`${cwdId}-${bot.id}`} className="sr-only">
+                        <Trans>Directory</Trans>
+                      </FieldLabel>
+                      <Input
+                        id={`${cwdId}-${bot.id}`}
+                        name="cwd"
+                        defaultValue={pin?.cwd ?? ""}
+                        placeholder={t`Directory`}
+                        disabled={pending}
+                      />
+                    </Field>
+                    <Button type="submit" size="sm" disabled={pending}>
+                      <Trans>Save</Trans>
+                    </Button>
+                  </form>
+                }
+              />
+            );
+          })
         : null}
-      {paired ? (
-        <p className="px-4 pb-3 text-body-sm break-all text-muted-foreground">{command}</p>
-      ) : null}
       {error ? (
         <p role="alert" className="px-4 py-3 text-body-sm text-destructive">
           {error}

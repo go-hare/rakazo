@@ -10,7 +10,6 @@ import {
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
-import { startHostComputerServer } from "../../../host-computer/src/host-computer-server.ts";
 import { provisionPrepared } from "./sandbox-test-support.js";
 
 let restoreFetch: () => void;
@@ -28,32 +27,14 @@ const context = {
 };
 
 const temporaryRoots: string[] = [];
-const hostServers: Array<Awaited<ReturnType<typeof startHostComputerServer>>> = [];
 
 afterEach(async () => {
-  await Promise.all(hostServers.splice(0).map((server) => server.close()));
   await Promise.all(
     temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
 
 describe.each([
-  [
-    "native host bridge",
-    async () => {
-      const root = await mkdtemp(path.join(tmpdir(), "rakazo-host-contract-"));
-      temporaryRoots.push(root);
-      const token = "ab".repeat(32);
-      const server = await startHostComputerServer({
-        root: await realpath(root),
-        token,
-        hostname: "127.0.0.1",
-      });
-      hostServers.push(server);
-      server.setEnabled(true);
-      return new HostComputerSandbox(`http://127.0.0.1:${server.port}`, token);
-    },
-  ],
   ["fake", () => Promise.resolve(new FakeSandboxProvider())],
   ["Boat over a fake API", () => Promise.resolve(fakeBoat())],
   [

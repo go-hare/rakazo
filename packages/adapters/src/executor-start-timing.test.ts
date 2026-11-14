@@ -41,11 +41,17 @@ function fixture(
     dedicated?: boolean;
     heldBy?: string;
     checkpoint?: string;
+    daemonRuns?: Parameters<typeof createRunExecutor>[0]["daemonRuns"];
   } = {},
 ) {
   const run = {
     id: "run-1",
     botId: "bot-1",
+    spaceId: "space-1",
+    threadId: "thread-1",
+    taskId: "task-1",
+    userId: "user-1",
+    trigger: "user",
     status: "queued",
     leaseFence: 0,
     checkpoint: options.checkpoint ?? null,
@@ -76,17 +82,27 @@ function fixture(
     },
     // Stop at attempt setup so the fixture exercises only the real startup path.
     attempt: {
-      create: vi.fn(async () => Promise.reject(new Error("attempt setup failed"))),
+      create: vi.fn(async () =>
+        options.daemonRuns
+          ? { id: "attempt-1" }
+          : Promise.reject(new Error("attempt setup failed")),
+      ),
+      updateMany: vi.fn(async () => ({ count: 1 })),
     },
   };
   const enqueue = vi.fn(async () => undefined);
+  const finalizeRun = vi.fn(async () => false);
   const executor = createRunExecutor({
     prisma,
+    secrets: [],
     jobs: { enqueue },
+    events: { finalizeRun },
+    daemonRuns: options.daemonRuns,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     prisma,
     enqueue,
+    finalizeRun,
     start: () => executor.continueRun("run-1", "worker-1"),
   };
 }
@@ -101,6 +117,42 @@ describe("execution start timing", () => {
   });
 
   afterEach(() => installLogger(createLogger({ service: "test", level: "off", sinks: [] })));
+
+  it("hands an assigned turn the claimed run and computer leases", async () => {
+    const run = vi.fn(async () => "handled" as const);
+    const { prisma, start } = fixture({ daemonRuns: { run } });
+    await start();
+    expect(run).toHaveBeenCalledWith({
+      runId: "run-1",
+      attemptId: "attempt-1",
+      leaseOwner: "worker-1",
+      leaseFence: 1,
+      botId: "bot-1",
+      spaceId: "space-1",
+      threadId: "thread-1",
+      userId: "user-1",
+      signal: expect.any(AbortSignal),
+    });
+    expect(prisma.attempt.create).toHaveBeenCalledBefore(run);
+    expect(leases.release).toHaveBeenCalledWith(prisma, lease);
+  });
+
+  it("fails an uncertain machine turn without retrying setup", async () => {
+    const run = vi.fn(async (): Promise<"handled"> => {
+      throw new Error("connection lost");
+    });
+    const { finalizeRun, enqueue, start } = fixture({ daemonRuns: { run } });
+    await start();
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        outcome: "failed",
+      }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 
   it.each(["busy", "switching"])(
     "does not report execution while the computer is %s",

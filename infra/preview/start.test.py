@@ -58,7 +58,6 @@ class PreviewBoot(unittest.TestCase):
         (self.root / "apps/api").mkdir(parents=True)
         web = self.root / "apps/web/node_modules/.bin"
         web.mkdir(parents=True)
-        (self.root / "apps/worker").mkdir(parents=True)
         self.data = self.root / "data"
         self.data.mkdir()
         self.bin = self.root / "bin"

@@ -28,7 +28,8 @@ const compose = parse(readFileSync(composeFile, "utf8"), { merge: true }) as {
 const updater = compose.services.updater as ComposeService;
 
 describe("the production computer provider", () => {
-  it.each(["api", "worker"])("lets .env select the %s provider with an E2B default", (name) => {
+  it("lets .env select the api provider with an E2B default", () => {
+    const name = "api";
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(compose.services[name]?.environment?.SANDBOX_PROVIDER).toBe("${SANDBOX_PROVIDER:-e2b}");
   });
@@ -41,23 +42,6 @@ describe("the production computer provider", () => {
  */
 /** The Compose interpolation this file is expected to carry, as Compose spells it. */
 const interpolated = (name: string, fallback = "") => `\${${name}:-${fallback}}`;
-
-describe("worker error reporting configuration", () => {
-  it.each([
-    "docker-compose.yml",
-    "docker-compose.prod.yml",
-    "docker-compose.images.yml",
-    "docker-compose.prod.docker.yml",
-  ])("passes optional settings through %s", (file) => {
-    const { services } = parse(
-      readFileSync(path.resolve(import.meta.dirname, "../../compose", file), "utf8"),
-      { merge: true },
-    ) as { services: Record<string, ComposeService> };
-    for (const key of ["SENTRY_DSN", "SENTRY_ENVIRONMENT", "SENTRY_RELEASE"]) {
-      expect(services.worker?.environment?.[key]).toBe(interpolated(key));
-    }
-  });
-});
 
 describe("the updater compose service", () => {
   it("exists and runs the updater image", () => {

@@ -215,14 +215,35 @@ jobs:
             pnpm exec vitest run "${targets[@]}" --shard=${{ matrix.shard }}/6
           fi
 
+  daemon-checks:
+    name: Daemon checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: npm install --global bun@1.3.14
+      - name: Install daemon development dependencies
+        working-directory: daemon
+        run: bun install --no-save
+      - name: Typecheck and test daemon
+        working-directory: daemon
+        run: bun run check && bun test
+      - name: Compile daemon
+        run: bun apps/desktop/scripts/build-daemon.mjs
+
   # The required check and the deploy gate, under one stable name.
   checks:
     name: Checks
-    needs: [static-checks, unit-tests-shard]
+    needs: [static-checks, unit-tests-shard, daemon-checks]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
+      - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success && test "${{ needs.daemon-checks.result }}" = success
 
   # Desktop + its workspace deps only. A full-workspace install on Windows also links supervisor
   # (dockerode → cpu-features) and spends about a minute on a node-gyp rebuild that fails without
@@ -258,15 +279,22 @@ jobs:
       - run: pnpm --filter @rakazo/desktop build
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
-      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/file-handle-path.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
+      - name: Compile and smoke test daemon
+        shell: bash
+        env:
+          RAKAZO_DAEMON_HOME: ${{ runner.temp }}/daemon-smoke
+        run: |
+          npm install --global bun@1.3.14
+          bun apps/desktop/scripts/build-daemon.mjs
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            apps/desktop/build/daemon/rakazo-daemon-windows-x64.exe status
+          else
+            apps/desktop/build/daemon/rakazo-daemon-darwin-$(node -p 'process.arch') status
+          fi
+      - run: pnpm exec vitest run packages/adapters/src/file-handle-path.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
         run: pnpm exec vitest run apps/desktop/src/host-screen.windows.test.ts
-      - name: Native computer in headless Electron
-        run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
-        env:
-          ELECTRON_RUN_AS_NODE: "1"
-          electron_config_cache: ${{ runner.temp }}/electron-cache
 
   # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
   # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
@@ -600,8 +628,7 @@ jobs:
     # Only checks that catch a broken server gate the deploy; lint, E2E, and Docker drills report on their own.
     needs: [checks, test-integration, publish-server-image]
     runs-on: ubuntu-latest
-    # Matches infra/compose/deploy-main.sh's own limits, including a fallback build, rollback, and
-    # waiting twice for a replaced worker to finish its jobs.
+    # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
     timeout-minutes: 140
     concurrency:
       group: production

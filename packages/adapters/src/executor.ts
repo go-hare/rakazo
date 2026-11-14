@@ -185,7 +185,7 @@ import {
 import { applyTool } from "./run-tools.js";
 import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
-import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
+import { userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
 import { completeRun, consumeRunEvents, failRun, handoffEndedTurn } from "./run-turn.js";
 import {
@@ -490,6 +490,39 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // integration and computer setup must not occupy a queue dispatch slot.
         onRunStarted?.();
         dispatchHandedOff = Boolean(onRunStarted);
+        runAbortController = new AbortController();
+        if (!lease.valid) runAbortController.abort();
+        if (deps.shutdownSignal?.aborted) runAbortController.abort(deps.shutdownSignal.reason);
+        const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
+        deps.shutdownSignal?.addEventListener("abort", onShutdown);
+        detachShutdown = () => deps.shutdownSignal?.removeEventListener("abort", onShutdown);
+        if (deps.daemonRuns && !backgroundHelper) {
+          let result: "unassigned" | "handled";
+          try {
+            result = await deps.daemonRuns.run({
+              runId,
+              attemptId: attempt.id,
+              leaseOwner: workerId,
+              leaseFence: fence,
+              botId: run.botId,
+              spaceId: run.spaceId,
+              threadId: run.threadId,
+              userId: run.userId,
+              signal: runAbortController.signal,
+            });
+          } catch {
+            // A command may already have reached the machine. Never use setup retry here.
+            await failRunBeforeTurn(
+              deps,
+              run,
+              "",
+              { attemptId: attempt.id, workerId, fence },
+              "Execution on this computer could not be completed.",
+            );
+            return;
+          }
+          if (result === "handled") return;
+        }
         // A saved computer turn owns both identities. Resolve them before consulting
         // today's main selection, whose connection may have changed while paused.
         let turnCheckpoint: string | undefined;
@@ -659,12 +692,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 modelChoice.modelId,
               )
             : null;
-        runAbortController = new AbortController();
-        if (!lease.valid) runAbortController.abort();
-        if (deps.shutdownSignal?.aborted) runAbortController.abort(deps.shutdownSignal.reason);
-        const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
-        deps.shutdownSignal?.addEventListener("abort", onShutdown);
-        detachShutdown = () => deps.shutdownSignal?.removeEventListener("abort", onShutdown);
         const composioRows = storedConnections.filter(
           (connection) => connection.connectorId === "composio",
         );
@@ -1242,20 +1269,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           runUserId: run.userId,
           botUserId: bot.userId,
         });
-        let userComputer: UserComputerState;
-        let userComputerScreen = false;
-        if (
-          userComputerOwnerId &&
-          deps.userDevices &&
-          !disabledBuiltinTools.has(USER_COMPUTER_SHELL_TOOL)
-        ) {
-          const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
-          if (device) {
-            userComputer = "connected";
-            // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-            userComputerScreen = device.platform === "darwin" || device.platform === "win32";
-          } else userComputer = "offline";
-        }
+        // Turns on a person's computer go through the daemon, not these remote tools.
+        const userComputer: UserComputerState = undefined;
+        const userComputerScreen = false;
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,

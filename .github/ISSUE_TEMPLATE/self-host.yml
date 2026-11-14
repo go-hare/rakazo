@@ -20,7 +20,7 @@ body:
         - pnpm install
         - pnpm db:generate or db:migrate
         - pnpm sandbox:build
-        - pnpm dev (API, worker, web, or supervisor)
+        - pnpm dev (API, web, or supervisor)
         - Health check / first login
         - Other
     validations:

@@ -44,10 +44,19 @@ describe("answerableAskMessageIds", () => {
     ).toEqual(new Set(["question", "approval"]));
   });
 
-  it("ignores answered prompts and prompts from non-waiting runs", () => {
+  it("keeps a live machine prompt answerable while its run is still executing", () => {
     expect(
       answerableAskMessageIds({
         run: { id: "run-1", status: "running" },
+        messages: [{ id: "ask-1", runId: "run-1", blocks: [{ kind: "ask", status: "pending" }] }],
+      }),
+    ).toEqual(new Set(["ask-1"]));
+  });
+
+  it("ignores answered prompts and prompts from finished runs", () => {
+    expect(
+      answerableAskMessageIds({
+        run: { id: "run-1", status: "completed" },
         messages: [{ id: "ask-1", runId: "run-1", blocks: [{ kind: "ask", status: "pending" }] }],
       }),
     ).toEqual(new Set());

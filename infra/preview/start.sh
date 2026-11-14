@@ -134,7 +134,6 @@ if [[ -n $setup_required ]] || ! demo_account_exists; then
 fi
 
 gosu node bash -c 'cd "$1/apps/api" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &
-gosu node bash -c 'cd "$1/apps/worker" && exec node --enable-source-maps dist/index.js' _ "$ROOT" &
 ready=
 for _ in $(seq 1 120); do
   curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3100/ready && { ready=1; break; }

@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import type { RakazoDesktop } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { listDaemonMachines, pinDaemonMachine } from "../lib/daemon-machines";
 import { rpc } from "../lib/rpc";
-import { listUserDevices, removeUserDevice } from "../lib/user-devices";
 import { ComputerDeviceSettings } from "./ComputerDeviceSettings";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -16,11 +15,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
-  Button: ({
-    variant: _variant,
-    size: _size,
-    ...props
-  }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
+  Button: (props: ComponentProps<"button">) => <button {...props} />,
   Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
@@ -28,31 +23,13 @@ vi.mock("@rakazo/ui-web", () => ({
   Input: (props: ComponentProps<"input">) => <input {...props} />,
   NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
-  Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
-    <label htmlFor={htmlFor}>{children}</label>
-  ),
-  Switch: ({
-    checked,
-    onCheckedChange,
-    ...props
-  }: Omit<ComponentProps<"input">, "onChange"> & {
-    onCheckedChange: (checked: boolean) => void;
-  }) => (
-    <input
-      type="checkbox"
-      {...props}
-      checked={checked}
-      onChange={(event) => onCheckedChange(event.target.checked)}
-    />
-  ),
 }));
-vi.mock("../lib/user-devices", () => ({
-  listUserDevices: vi.fn(),
-  pairUserDevice: vi.fn(),
-  removeUserDevice: vi.fn(),
+vi.mock("../lib/daemon-machines", () => ({
+  listDaemonMachines: vi.fn(),
+  pinDaemonMachine: vi.fn(),
 }));
 vi.mock("../lib/rpc", () => ({
-  rpc: { me: vi.fn(), bots: { list: vi.fn(async () => []), update: vi.fn() } },
+  rpc: { bots: { list: vi.fn(async () => []), update: vi.fn() } },
 }));
 
 let host: HTMLDivElement;
@@ -68,183 +45,48 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-  delete window.rakazoDesktop;
 });
 
-const laptop = { deviceId: "d1", name: "Laptop", connected: true };
-const desk = { deviceId: "d2", name: "Desk PC", connected: false };
+const laptop = { id: "m1", name: "Laptop", online: true, cwd: "" };
 
-function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
-  window.rakazoDesktop = { platform: "darwin", device } as RakazoDesktop;
-}
-
-it("offers to add a machine when none is paired", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([]);
+it("lists a connected daemon and does not offer the old computer command", async () => {
+  vi.mocked(listDaemonMachines).mockResolvedValue({ machines: [laptop], pins: {} });
   await act(async () => root.render(<ComputerDeviceSettings />));
-  expect(host.textContent).toContain("Add machine");
-  expect(host.querySelector("button")?.hasAttribute("disabled")).toBe(true);
+  expect(host.textContent).toContain("Laptop");
+  expect(host.textContent).toContain("Connected");
+  expect(host.textContent).toContain("rakazo-daemon login");
+  expect(host.textContent).not.toContain("host-computer");
+  expect(host.textContent).not.toContain("Most recently connected");
 });
 
-it("saves which computer a bot runs on", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([laptop, desk]);
-  vi.mocked(rpc.bots.list).mockResolvedValue([
-    { id: "bot-1", name: "Scout", userDeviceId: null },
-  ] as Awaited<ReturnType<typeof rpc.bots.list>>);
+it("switches a pinned bot back to the server", async () => {
+  vi.mocked(listDaemonMachines).mockResolvedValue({
+    machines: [laptop],
+    pins: { "bot-1": { machineId: "m1", cwd: "/work/scout", agent: "claude" } },
+  });
+  vi.mocked(rpc.bots.list).mockResolvedValue([{ id: "bot-1", name: "Scout" }] as Awaited<
+    ReturnType<typeof rpc.bots.list>
+  >);
+  vi.mocked(pinDaemonMachine).mockResolvedValue();
   await act(async () => root.render(<ComputerDeviceSettings />));
   const select = host.querySelector("select");
+  if (select) select.value = "";
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  expect(pinDaemonMachine).toHaveBeenCalledWith("bot-1", "", "/work/scout", "claude");
+});
+
+it("pins a bot to a machine and directory", async () => {
+  vi.mocked(listDaemonMachines).mockResolvedValue({ machines: [laptop], pins: {} });
+  vi.mocked(rpc.bots.list).mockResolvedValue([{ id: "bot-1", name: "Scout" }] as Awaited<
+    ReturnType<typeof rpc.bots.list>
+  >);
+  vi.mocked(pinDaemonMachine).mockResolvedValue();
+  await act(async () => root.render(<ComputerDeviceSettings />));
+  const select = host.querySelector("select");
+  const input = host.querySelector("input");
   expect(select?.getAttribute("aria-label")).toBe("Scout runs on");
-  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(select, "d2");
-  select?.dispatchEvent(new Event("change", { bubbles: true }));
-  await act(async () => {});
-  expect(rpc.bots.update).toHaveBeenCalledWith({ botId: "bot-1", userDeviceId: "d2" });
-});
-
-it("lists computers with their status and removes one", async () => {
-  vi.mocked(listUserDevices).mockResolvedValueOnce([laptop, desk]).mockResolvedValueOnce([laptop]);
-  vi.mocked(removeUserDevice).mockResolvedValue();
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  expect(host.textContent).toContain("LaptopConnected");
-  expect(host.textContent).toContain("Desk PCOffline");
-  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
-
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC"]')?.click(),
-  );
-  expect(removeUserDevice).toHaveBeenCalledWith("d2");
-  expect(host.textContent).not.toContain("Desk PC");
-});
-
-it("turns this computer on and off through the desktop app only", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([]);
-  const state = { deviceId: null, name: "Laptop", allowed: false };
-  const device = {
-    state: vi.fn(async () => state),
-    setAllowed: vi.fn(async (allowed: boolean) => {
-      Object.assign(state, { allowed, deviceId: "d1" });
-      return state;
-    }),
-  };
-  desktopWith(device);
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
-  expect(host.textContent).toContain("Let bots use this computer");
-  expect(toggle.checked).toBe(false);
-
-  vi.mocked(listUserDevices).mockResolvedValue([laptop]);
-  await act(async () => toggle.click());
-  expect(device.setAllowed).toHaveBeenCalledWith(true);
-  expect(toggle.checked).toBe(true);
-  expect(host.textContent).toContain("LaptopConnected");
-});
-
-it("reports a failed removal", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([laptop]);
-  vi.mocked(removeUserDevice).mockRejectedValue(new Error("offline"));
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop"]')?.click(),
-  );
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not remove");
-});
-
-it("shows every connected computer as connected", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([laptop, { ...desk, connected: true }]);
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  expect(host.textContent).toContain("LaptopConnected");
-  expect(host.textContent).toContain("Desk PCConnected");
-});
-
-it("stays off and reports it when turning this computer on fails", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([]);
-  const device = {
-    state: vi.fn(async () => ({ deviceId: null, name: "Laptop", allowed: false })),
-    setAllowed: vi.fn(async () => {
-      throw new Error("Could not pair this computer");
-    }),
-  };
-  desktopWith(device);
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
-  await act(async () => toggle.click());
-  expect(device.setAllowed).toHaveBeenCalledWith(true);
-  expect(toggle.checked).toBe(false);
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
-});
-
-it("turns this computer on and off for the app-managed local server", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([]);
-  const me = { canChooseHostComputer: true, computerHost: "docker" };
-  vi.mocked(rpc.me).mockImplementation(async () => me as Awaited<ReturnType<typeof rpc.me>>);
-  const computer = {
-    managesHostChoice: true,
-    requestAccess: vi.fn(async () => {
-      me.computerHost = "this-mac";
-      return true;
-    }),
-    revokeAccess: vi.fn(async () => {
-      me.computerHost = "docker";
-    }),
-    onConfigure: () => () => undefined,
-  };
-  window.rakazoDesktop = {
-    platform: "darwin",
-    computer,
-    device: { state: async () => null, setAllowed: vi.fn() },
-  } as unknown as RakazoDesktop;
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
-  expect(toggle.checked).toBe(false);
-
-  await act(async () => toggle.click());
-  expect(computer.requestAccess).toHaveBeenCalled();
-  expect(toggle.checked).toBe(true);
-
-  await act(async () => toggle.click());
-  expect(computer.revokeAccess).toHaveBeenCalled();
-  expect(toggle.checked).toBe(false);
-});
-
-it("stays hidden on a server that does not run bots on this computer", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([]);
-  vi.mocked(rpc.me).mockResolvedValue({
-    canChooseHostComputer: false,
-    computerHost: null,
-  } as Awaited<ReturnType<typeof rpc.me>>);
-  window.rakazoDesktop = {
-    platform: "darwin",
-    computer: { managesHostChoice: true },
-    device: { state: async () => null },
-  } as unknown as RakazoDesktop;
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
-  expect(host.textContent).toContain("Add machine");
-});
-
-it("keeps the local switch when a later profile read fails", async () => {
-  vi.mocked(listUserDevices).mockResolvedValue([]);
-  vi.mocked(rpc.me)
-    .mockResolvedValueOnce({ canChooseHostComputer: true, computerHost: "this-mac" } as Awaited<
-      ReturnType<typeof rpc.me>
-    >)
-    .mockRejectedValue(new Error("offline"));
-  const computer = {
-    managesHostChoice: true,
-    requestAccess: vi.fn(async () => true),
-    revokeAccess: vi.fn(async () => {
-      throw new Error("Local server is unavailable");
-    }),
-    onConfigure: () => () => undefined,
-  };
-  window.rakazoDesktop = {
-    platform: "darwin",
-    computer,
-    device: { state: async () => null, setAllowed: vi.fn() },
-  } as unknown as RakazoDesktop;
-  await act(async () => root.render(<ComputerDeviceSettings />));
-  await act(async () =>
-    host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!.click(),
-  );
-  const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]');
-  expect(toggle?.checked).toBe(true);
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
+  if (select) select.value = "m1";
+  if (input) input.value = "/work/scout";
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  expect(pinDaemonMachine).toHaveBeenCalledWith("bot-1", "m1", "/work/scout", "claude");
 });

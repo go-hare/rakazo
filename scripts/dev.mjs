@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `pnpm dev`: start the API, worker, web app, and sandbox supervisor for this checkout.
+// `pnpm dev`: start the API, web app, and sandbox supervisor for this checkout.
 //
 // Several checkouts (git worktrees) can run at once. Each gets the first free block of ports,
 // and all of them share one Postgres database unless this branch adds migrations that main
@@ -51,7 +51,7 @@ const MANAGED = {
   database: "rakazo",
 };
 const TAILSCALE_APP_CLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
-const SERVICES = ["@rakazo/api", "@rakazo/worker", "@rakazo/web", "@rakazo/sandbox-supervisor"];
+const SERVICES = ["@rakazo/api", "@rakazo/web", "@rakazo/sandbox-supervisor"];
 
 const fileEnv = existsSync(path.join(root, ".env"))
   ? dotenv.parse(readFileSync(path.join(root, ".env")))

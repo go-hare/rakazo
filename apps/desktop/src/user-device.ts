@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
-import type { UserDeviceClientOptions } from "../../../host-computer/src/user-device-client.ts";
 import type {
   RakazoDesktopDevice,
   UserDevicePairRequest,
@@ -150,7 +149,7 @@ export function createUserDeviceAccess(deps: {
     origin: string,
     token: string,
     events: {
-      onRevoked: UserDeviceClientOptions["onRevoked"];
+      onRevoked: (reason?: string) => void;
       authorize: () => Promise<boolean>;
     },
   ) => { close(): void; cancelAll(): void };
@@ -252,7 +251,9 @@ export function createUserDeviceAccess(deps: {
     if (consent.get(origin)?.consent === "declined") return false;
     if (isAllowed(origin)) return true;
     const seen = changes.get(origin);
+    const selection = generation;
     const answer = await ask(origin);
+    if (selection !== generation || current !== origin) return false;
     // Turned off, revoked, or already answered while the prompt was open.
     if (changes.get(origin) !== seen) return isAllowed(origin);
     await decide(origin, answer ? "allowed" : "declined").catch(() => undefined);
@@ -315,13 +316,18 @@ export function createUserDeviceAccess(deps: {
     if (paired.has(origin) || unavailable.has(origin)) return Promise.resolve();
     let pairing = pairings.get(origin);
     if (!pairing) {
-      pairing = pairWith(origin).finally(() => pairings.delete(origin));
+      const selection = generation;
+      pairing = pairWith(origin, selection).finally(() => {
+        pairings.delete(origin);
+        if (selection !== generation && current === origin) void pair();
+      });
       pairings.set(origin, pairing);
     }
     return pairing;
   }
 
-  async function pairWith(origin: string) {
+  async function pairWith(origin: string, selection: number) {
+    const stale = () => selection !== generation || current !== origin;
     if (!(await deps.cipher.available())) {
       unavailable.add(origin);
       return;
@@ -360,7 +366,16 @@ export function createUserDeviceAccess(deps: {
     }
     try {
       await removals.get(origin);
+      if (stale()) {
+        await revokeToken(origin, device.token);
+        return;
+      }
       await savePairedDevice(deps.userDataDir, origin, device, deps.cipher);
+      if (stale()) {
+        await deletePairedDevice(deps.userDataDir, origin);
+        await revokeToken(origin, device.token);
+        return;
+      }
     } catch {
       // A token that cannot be kept must not stay valid on the server.
       await revokeToken(origin, device.token);
@@ -430,10 +445,13 @@ export function createUserDeviceAccess(deps: {
         return;
       }
       const seen = changes.get(origin);
+      const selection = generation;
       if (!isAllowed(origin) && !(await ask(origin))) return;
+      if (selection !== generation || current !== origin) return;
       if (changes.get(origin) !== seen && consent.get(origin)?.consent !== "allowed") return;
       unavailable.delete(origin);
       await pairOnce(origin);
+      if (selection !== generation || current !== origin) return;
       if (!paired.has(origin)) throw new Error("Could not pair this computer");
       if (changes.get(origin) !== seen) return;
       await decide(origin, "allowed");

@@ -125,6 +125,16 @@ jobs:
         run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - name: Install Bun for daemon compilation
+        run: npm install --global bun@1.3.14
+      - name: Build daemon binaries
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            bun apps/desktop/scripts/build-daemon.mjs --mac-universal
+          else
+            bun apps/desktop/scripts/build-daemon.mjs
+          fi
       - name: Build renderer and Electron main process
         run: pnpm --filter @rakazo/web build && pnpm --filter @rakazo/desktop build
         env:

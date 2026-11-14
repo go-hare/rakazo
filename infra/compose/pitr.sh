@@ -107,7 +107,7 @@ restore_into() {
   local -a env=()
   [[ -r "${ENV_FILE}" ]] || die "Cannot read ${ENV_FILE}"
   [[ -z "$(docker ps -q --filter "volume=${volume}")" ]] ||
-    die "A running container uses ${volume}; stop it first (for production: compose stop api worker web pitr postgres)"
+    die "A running container uses ${volume}; stop it first (for production: compose stop api web pitr postgres)"
   for name in PITR_BUCKET PITR_ENDPOINT PITR_REGION PITR_ACCESS_KEY_ID PITR_SECRET_ACCESS_KEY PITR_PREFIX \
     PITR_PATH_STYLE PITR_SYSTEM_ID; do
     # Passed by name, so secrets stay out of the docker command line.

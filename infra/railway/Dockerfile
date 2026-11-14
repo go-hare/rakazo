@@ -9,7 +9,7 @@ WORKDIR /app
 COPY --chmod=755 . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @rakazo/db generate
-RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
+RUN pnpm --filter @rakazo/api build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
