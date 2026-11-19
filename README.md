@@ -1,4 +1,4 @@
-# Rakazo
+# Rakazo 本项目接入 Devin Bots 由 Devin Bots  操刀完成 https://poke.com/bots
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md)
 
