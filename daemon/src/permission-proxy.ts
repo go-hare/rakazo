@@ -5,7 +5,7 @@
 import { connect, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 
-const socketPath = process.argv[2] ?? "";
+const socketPath = process.argv[3] ?? "";
 const waiting = new Map<string, (answer: BrokerAnswer) => void>();
 let live: Socket | null = null;
 
