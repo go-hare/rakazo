@@ -6,6 +6,7 @@ import {
   createDaemonMachineStore,
   expireLiveDaemonAsks,
   expireOverdueLiveDaemonAsks,
+  runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { WebSocket } from "ws";
@@ -156,155 +157,159 @@ export function createMachines(
     const awaitingAck = new Map<string, number>();
     const helloTimeout = setTimeout(() => client.terminate(), 10_000);
     helloTimeout.unref();
-    const release = async () => {
-      if (!active) return;
-      active = false;
-      if (live.get(record.id)?.connectionId === connectionId) live.delete(record.id);
-      await failTurns(record.id, await store.releaseConnection(record.id, connectionId));
-    };
-    const pump = async () => {
-      if (!active || closed || busy) return;
-      busy = true;
-      try {
-        if ([...awaitingAck.values()].some((sentAt) => Date.now() - sentAt > 15_000)) {
-          client.terminate();
-          return;
-        }
-        if (Date.now() - lastRenew >= LEASE_MS / 3) {
-          if (!(await store.renewConnection(record.id, connectionId, LEASE_MS))) {
+    const release = () =>
+      runAsSystem("release a daemon connection and recover its turns", async () => {
+        if (!active) return;
+        active = false;
+        if (live.get(record.id)?.connectionId === connectionId) live.delete(record.id);
+        await failTurns(record.id, await store.releaseConnection(record.id, connectionId));
+      });
+    const pump = () =>
+      runAsSystem("dispatch commands to an authenticated daemon", async () => {
+        if (!active || closed || busy) return;
+        busy = true;
+        try {
+          if ([...awaitingAck.values()].some((sentAt) => Date.now() - sentAt > 15_000)) {
             client.terminate();
             return;
           }
-          lastRenew = Date.now();
-          client.send(JSON.stringify({ type: "lease_heartbeat" }));
-        }
-        while (active && !closed && client.readyState === 1) {
-          const command = await store.claimNext(record.id, connectionId);
-          if (!command) break;
-          const payload = command.payload;
-          if (!payload || typeof payload !== "object" || Array.isArray(payload))
-            throw new Error("Invalid daemon command payload");
-          if (command.type === "turn") {
-            const run = await prisma.run.findFirst({
-              where: {
-                deviceId: record.id,
-                deviceTurnId: command.turnId,
-                threadId: command.threadId,
-                status: "running",
-              },
-              select: {
-                id: true,
-                spaceId: true,
-                botId: true,
-                leaseFence: true,
-                attempts: {
-                  where: { status: "running" },
-                  select: { id: true, fence: true },
-                  take: 1,
-                },
-              },
-            });
-            const attempt =
-              run?.attempts.find((item) => item.fence === run.leaseFence) ?? run?.attempts[0];
-            if (!run || !attempt) {
-              await store.reject(record.id, connectionId, command.id);
-              continue;
+          if (Date.now() - lastRenew >= LEASE_MS / 3) {
+            if (!(await store.renewConnection(record.id, connectionId, LEASE_MS))) {
+              client.terminate();
+              return;
             }
-            turns.set(command.turnId, {
-              threadId: command.threadId,
-              text: "",
-              done: false,
-              ok: true,
-              runId: run.id,
-              attemptId: attempt.id,
-              fence: attempt.fence,
-              spaceId: run.spaceId,
-              botId: run.botId,
-            });
+            lastRenew = Date.now();
+            client.send(JSON.stringify({ type: "lease_heartbeat" }));
           }
-          awaitingAck.set(command.id, Date.now());
-          client.send(JSON.stringify({ ...payload, type: command.type, commandId: command.id }));
+          while (active && !closed && client.readyState === 1) {
+            const command = await store.claimNext(record.id, connectionId);
+            if (!command) break;
+            const payload = command.payload;
+            if (!payload || typeof payload !== "object" || Array.isArray(payload))
+              throw new Error("Invalid daemon command payload");
+            if (command.type === "turn") {
+              const run = await prisma.run.findFirst({
+                where: {
+                  deviceId: record.id,
+                  deviceTurnId: command.turnId,
+                  threadId: command.threadId,
+                  status: "running",
+                },
+                select: {
+                  id: true,
+                  spaceId: true,
+                  botId: true,
+                  leaseFence: true,
+                  attempts: {
+                    where: { status: "running" },
+                    select: { id: true, fence: true },
+                    take: 1,
+                  },
+                },
+              });
+              const attempt =
+                run?.attempts.find((item) => item.fence === run.leaseFence) ?? run?.attempts[0];
+              if (!run || !attempt) {
+                await store.reject(record.id, connectionId, command.id);
+                continue;
+              }
+              turns.set(command.turnId, {
+                threadId: command.threadId,
+                text: "",
+                done: false,
+                ok: true,
+                runId: run.id,
+                attemptId: attempt.id,
+                fence: attempt.fence,
+                spaceId: run.spaceId,
+                botId: run.botId,
+              });
+            }
+            awaitingAck.set(command.id, Date.now());
+            client.send(JSON.stringify({ ...payload, type: command.type, commandId: command.id }));
+          }
+        } catch (error) {
+          report(error);
+          client.terminate();
+        } finally {
+          busy = false;
         }
-      } catch (error) {
-        report(error);
-        client.terminate();
-      } finally {
-        busy = false;
-      }
-    };
+      });
     const timer = setInterval(() => void pump(), SCAN_MS);
     timer.unref();
     client.on("message", (raw) => {
       sequence = sequence
-        .then(async () => {
-          if (closed) return;
-          const frame = parse(String(raw));
-          if (!frame) return;
-          if (!active) {
-            if (
-              frame.type !== "hello" ||
-              typeof frame.protocolVersion !== "number" ||
-              frame.protocolVersion < 2 ||
-              typeof frame.name !== "string" ||
-              !frame.name
-            ) {
+        .then(() =>
+          runAsSystem("process an authenticated daemon frame", async () => {
+            if (closed) return;
+            const frame = parse(String(raw));
+            if (!frame) return;
+            if (!active) {
+              if (
+                frame.type !== "hello" ||
+                typeof frame.protocolVersion !== "number" ||
+                frame.protocolVersion < 2 ||
+                typeof frame.name !== "string" ||
+                !frame.name
+              ) {
+                client.terminate();
+                return;
+              }
+              const oldTurns = await store.acquireConnection(record.id, connectionId, LEASE_MS);
+              if (oldTurns === null || closed) {
+                client.terminate();
+                if (oldTurns !== null) await store.releaseConnection(record.id, connectionId);
+                return;
+              }
+              clearTimeout(helloTimeout);
+              active = true;
+              lastRenew = Date.now();
+              client.send(JSON.stringify({ type: "lease_heartbeat" }));
+              live.set(record.id, { socket: client, connectionId, turns });
+              await failTurns(record.id, oldTurns);
+              await pump();
+              return;
+            }
+            if (!(await store.renewConnection(record.id, connectionId, LEASE_MS))) {
               client.terminate();
               return;
             }
-            const oldTurns = await store.acquireConnection(record.id, connectionId, LEASE_MS);
-            if (oldTurns === null || closed) {
-              client.terminate();
-              if (oldTurns !== null) await store.releaseConnection(record.id, connectionId);
-              return;
-            }
-            clearTimeout(helloTimeout);
-            active = true;
             lastRenew = Date.now();
             client.send(JSON.stringify({ type: "lease_heartbeat" }));
-            live.set(record.id, { socket: client, connectionId, turns });
-            await failTurns(record.id, oldTurns);
-            await pump();
-            return;
-          }
-          if (!(await store.renewConnection(record.id, connectionId, LEASE_MS))) {
-            client.terminate();
-            return;
-          }
-          lastRenew = Date.now();
-          client.send(JSON.stringify({ type: "lease_heartbeat" }));
-          if (frame.type === "command_ack" || frame.type === "command_rejected") {
-            if (typeof frame.commandId !== "string" || !awaitingAck.has(frame.commandId)) return;
-            awaitingAck.delete(frame.commandId);
-            const status = frame.type === "command_ack" ? "acknowledged" : "rejected";
-            if (status === "acknowledged")
-              await store.ack(record.id, connectionId, frame.commandId);
-            else await store.reject(record.id, connectionId, frame.commandId);
-            return;
-          }
-          const turnId = typeof frame.turnId === "string" ? frame.turnId : "";
-          const turn = turns.get(turnId);
-          if (!turn || turn.done || frame.threadId !== turn.threadId) return;
-          if (frame.type === "delta" && typeof frame.text === "string") turn.text += frame.text;
-          if (frame.type === "done") {
-            turn.done = true;
-            turn.ok = frame.ok !== false;
-            if (typeof frame.error === "string") turn.error = frame.error;
-          }
-          await onFrame({
-            ...frame,
-            machineId: record.id,
-            connectionId,
-            runId: turn.runId,
-            attemptId: turn.attemptId,
-            leaseFence: turn.fence,
-            spaceId: turn.spaceId,
-            botId: turn.botId,
-          });
-          if (frame.type === "done") {
-            await store.finishTurn(record.id, connectionId, turnId);
-            turns.delete(turnId);
-          }
-        })
+            if (frame.type === "command_ack" || frame.type === "command_rejected") {
+              if (typeof frame.commandId !== "string" || !awaitingAck.has(frame.commandId)) return;
+              awaitingAck.delete(frame.commandId);
+              const status = frame.type === "command_ack" ? "acknowledged" : "rejected";
+              if (status === "acknowledged")
+                await store.ack(record.id, connectionId, frame.commandId);
+              else await store.reject(record.id, connectionId, frame.commandId);
+              return;
+            }
+            const turnId = typeof frame.turnId === "string" ? frame.turnId : "";
+            const turn = turns.get(turnId);
+            if (!turn || turn.done || frame.threadId !== turn.threadId) return;
+            if (frame.type === "delta" && typeof frame.text === "string") turn.text += frame.text;
+            if (frame.type === "done") {
+              turn.done = true;
+              turn.ok = frame.ok !== false;
+              if (typeof frame.error === "string") turn.error = frame.error;
+            }
+            await onFrame({
+              ...frame,
+              machineId: record.id,
+              connectionId,
+              runId: turn.runId,
+              attemptId: turn.attemptId,
+              leaseFence: turn.fence,
+              spaceId: turn.spaceId,
+              botId: turn.botId,
+            });
+            if (frame.type === "done") {
+              await store.finishTurn(record.id, connectionId, turnId);
+              turns.delete(turnId);
+            }
+          }),
+        )
         .catch((error) => {
           report(error);
           client.terminate();
