@@ -11,6 +11,7 @@ export interface BrokerAsk {
   summary: string;
   command?: string;
   cwd?: string;
+  choices?: string[];
 }
 
 export interface BrokerAnswer {
@@ -29,14 +30,17 @@ interface Pending {
  * 跟服务端的 permission broker 一样：本机一个 socket，claude 的 MCP 代理连上来问。
  * 问出去的是 onAsk；窗口答完调 answer。
  */
-export async function openBroker(onAsk: (ask: BrokerAsk) => void): Promise<Broker> {
+export async function openBroker(
+  onAsk: (ask: BrokerAsk) => void,
+  onPresent?: (itemId: string, presentation: Record<string, unknown>) => void,
+): Promise<Broker> {
   const dir = mkdtempSync(join(tmpdir(), "rakazo-perm-"));
   const socketPath =
     process.platform === "win32"
       ? `\\\\.\\pipe\\rakazo-perm-${process.pid}-${Date.now()}`
       : join(dir, "perm.sock");
   const pending = new Map<string, Pending>();
-  const server = createServer((conn) => accept(conn, pending, onAsk));
+  const server = createServer((conn) => accept(conn, pending, onAsk, onPresent));
   await new Promise<void>((resolve, reject) => {
     server.once("listening", () => resolve());
     server.once("error", reject);
@@ -86,6 +90,7 @@ function accept(
   conn: Socket,
   pending: Map<string, Pending>,
   onAsk: (ask: BrokerAsk) => void,
+  onPresent?: (itemId: string, presentation: Record<string, unknown>) => void,
 ): void {
   const owned = new Set<string>();
   conn.setEncoding("utf8");
@@ -97,6 +102,26 @@ function accept(
       const line = buffer.slice(0, newline).trim();
       buffer = buffer.slice(newline + 1);
       newline = buffer.indexOf("\n");
+      try {
+        const frame = JSON.parse(line);
+        if (frame.t === "present" && typeof frame.id === "string") {
+          if (
+            onPresent &&
+            frame.presentation &&
+            typeof frame.presentation === "object" &&
+            !Array.isArray(frame.presentation)
+          ) {
+            onPresent(frame.id, frame.presentation);
+            conn.write(
+              `${JSON.stringify({ t: "answer", id: frame.id, behavior: "answer", message: "Presentation queued. Check the chat for the rendered card or validation error." })}\n`,
+            );
+          } else
+            conn.write(
+              `${JSON.stringify({ t: "answer", id: frame.id, behavior: "deny", message: "Presentation is unavailable" })}\n`,
+            );
+          continue;
+        }
+      } catch {}
       const ask = parseAsk(line);
       if (!ask || pending.has(ask.requestId)) continue;
       owned.add(ask.requestId);
@@ -162,8 +187,16 @@ function parseAsk(line: string): BrokerAsk | null {
     requestId: ask.id,
     kind,
     tool,
-    summary: summary.slice(0, 200),
+    summary: kind === "question" ? summary : summary.slice(0, 200),
     ...(typeof input.command === "string" ? { command: input.command } : {}),
     ...(typeof input.cwd === "string" ? { cwd: input.cwd } : {}),
+    ...(Array.isArray(input.choices) &&
+    input.choices.length > 0 &&
+    input.choices.length <= 20 &&
+    input.choices.every(
+      (choice) => typeof choice === "string" && choice.length > 0 && choice.length <= 200,
+    )
+      ? { choices: input.choices as string[] }
+      : {}),
   };
 }

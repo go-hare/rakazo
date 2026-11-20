@@ -354,6 +354,108 @@ it("asks for a visible username and a hidden password when the bot names no fiel
   ]);
 });
 
+const textQuestion: AskBlock = {
+  kind: "ask",
+  text: "Type the verification answer",
+  input: "text",
+  status: "pending",
+};
+
+it.each([
+  { name: "omitted actions", actions: undefined },
+  { name: "empty actions", actions: [] },
+])(
+  "opens a free-text question with $name and submits only the typed answer",
+  async ({ actions }) => {
+    const onAnswer = vi.fn(async () => undefined);
+    await render({ ...textQuestion, actions }, undefined, onAnswer);
+
+    expect(container.querySelector('input[aria-label="Answer"]')).not.toBeNull();
+    expect(button("Send answer")?.disabled).toBe(true);
+    expect(button("Send it")).toBeUndefined();
+    expect(button("Edit first")).toBeUndefined();
+    expect(button("Cancel")).toBeUndefined();
+    expect(onAnswer).not.toHaveBeenCalled();
+
+    await type("Answer", "   ");
+    expect(button("Send answer")?.disabled).toBe(true);
+    await type("Answer", "  Tuesday  ");
+    expect(button("Send answer")?.disabled).toBe(false);
+    await act(async () => button("Send answer")!.click());
+
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith("Tuesday");
+    expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+    expect(container.querySelector("input, button")).toBeNull();
+  },
+);
+
+it.each(["Tuesday", "approved"])(
+  "quotes an answered free-text question after reload, including the literal answer %s",
+  async (answer) => {
+    await render({ ...textQuestion, status: "answered", answer });
+
+    expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe(answer);
+    expect(container.querySelector("input, button")).toBeNull();
+    expect(container.textContent).not.toContain("Sent");
+  },
+);
+
+it("keeps a free-text question closed when it can no longer be answered", async () => {
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={textQuestion}
+        canAnswer={false}
+        canDismiss={false}
+        onAnswer={async () => undefined}
+        onDismiss={async () => undefined}
+      />,
+    ),
+  );
+
+  expect(container.textContent).toContain("No longer active");
+  expect(container.querySelector("input, button")).toBeNull();
+});
+
+it("keeps the draft's Send it and Edit first flow without an explicit text input", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render({ kind: "ask", text: "Send this draft?", status: "pending" }, undefined, onAnswer);
+
+  expect(container.querySelector("input")).toBeNull();
+  expect(button("Send it")).toBeDefined();
+  await act(async () => button("Edit first")!.click());
+  await type("Answer", "An edited draft");
+  await act(async () => button("Cancel")!.click());
+  expect(container.querySelector("input")).toBeNull();
+  expect(onAnswer).not.toHaveBeenCalled();
+  await act(async () => button("Send it")!.click());
+  expect(onAnswer).toHaveBeenCalledExactlyOnceWith("approved");
+  expect(container.textContent).toContain("Sent");
+});
+
+it.each([
+  {
+    approvalEffectId: "effect-1",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+    label: "Allow once",
+  },
+  {
+    instructionUpdate: { botId: "bot-1", before: "Old", after: "New", reason: "Asked" },
+    actions: [{ id: "allow", label: "Allow once" }],
+    label: "Apply",
+  },
+  { actions: [{ id: "paris", label: "Paris" }], label: "AParis" },
+])("keeps explicit text input from replacing $label actions", async ({ label, ...block }) => {
+  await render({ ...textQuestion, ...block });
+
+  expect(container.querySelector("input, textarea")).toBeNull();
+  expect(button(label)).toBeDefined();
+  expect(button("Send answer")).toBeUndefined();
+});
+
 it("keeps an accepted question choice answered until the block updates", async () => {
   const block: AskBlock = {
     kind: "ask",

@@ -138,6 +138,7 @@ export interface AskFrame {
   kind: "permission" | "question";
   tool: string;
   summary: string;
+  choices?: string[];
   command?: string;
   cwd?: string;
 }
@@ -161,7 +162,16 @@ export interface DoneFrame {
   error?: string;
 }
 
+export interface PresentationFrame {
+  type: "presentation";
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  presentation: Record<string, unknown>;
+}
+
 export type DaemonFrame =
+  | PresentationFrame
   | HelloFrame
   | DeltaFrame
   | DoneFrame

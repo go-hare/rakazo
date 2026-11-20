@@ -145,6 +145,10 @@ export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return channelMessageLine(block);
+      if (block.kind === "connect") return `${block.name}: ${block.status}`;
+      if (block.kind === "card")
+        return block.lines.map((line) => `${line.k}: ${line.v}`).join("\n");
+      if (block.kind === "skill_draft") return `${block.name}: ${block.status}\n${block.goal}`;
       if (block.kind === "cloud_agent")
         return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
       if (block.kind === "subagent") {

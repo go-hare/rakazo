@@ -471,6 +471,22 @@ function imageOf(value: unknown): AgentEvent | null {
 }
 
 function claudeEvent(line: Record<string, unknown>): AgentEvent | null {
+  if (line.type === "user") {
+    const content = (line.message as { content?: unknown } | undefined)?.content;
+    if (Array.isArray(content)) {
+      const result = content.find(
+        (block) => block?.type === "tool_result" && typeof block.tool_use_id === "string",
+      );
+      if (result)
+        return {
+          type: "tool",
+          itemId: result.tool_use_id,
+          title: "tool",
+          phase: "completed",
+          ok: result.is_error !== true,
+        };
+    }
+  }
   if (line.type === "system" && line.subtype === "init" && typeof line.session_id === "string") {
     return { type: "session", sessionId: line.session_id };
   }
@@ -481,6 +497,15 @@ function claudeEvent(line: Record<string, unknown>): AgentEvent | null {
   const event = line.type === "stream_event" ? line.event : undefined;
   if (!event || typeof event !== "object") return imageOf(line.message);
   const started = (event as { content_block?: unknown }).content_block;
+  if (
+    (event as { type?: string }).type === "content_block_start" &&
+    started &&
+    typeof started === "object"
+  ) {
+    const tool = started as { type?: string; id?: string; name?: string };
+    if (tool.type === "tool_use" && typeof tool.id === "string" && typeof tool.name === "string")
+      return { type: "tool", itemId: tool.id, title: tool.name, phase: "started" };
+  }
   const image = imageOf(started) ?? imageOf((event as { delta?: unknown }).delta);
   if (image) return image;
   const delta = (event as { delta?: { type?: string; text?: string }; type?: string }).delta;

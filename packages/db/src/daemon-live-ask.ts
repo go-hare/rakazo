@@ -95,7 +95,11 @@ export async function createLiveDaemonAsk(
       !["allow", "deny"].every((id) => validatedBlock.actions?.some((action) => action.id === id)))
   )
     return null;
-  if (input.kind === "question" && block.data.actions?.length) return null;
+  if (
+    input.kind === "question" &&
+    block.data.actions?.some((action, index) => action.id !== `choice-${index}`)
+  )
+    return null;
   await contentEncryptionOf(prisma)?.ring.all(input.spaceId);
   const result = await prisma.$transaction(async (tx) => {
     const run = await activeRun(tx, input);
@@ -181,6 +185,10 @@ export async function answerLiveDaemonAsk(
     if (!message || !parsed.success || parsed.data.length !== 1) return null;
     const block = parsed.data[0];
     if (block?.kind !== "ask" || block.status === "answered") return null;
+    const answer =
+      ask.kind === "question"
+        ? (block.actions?.find((action) => action.id === input.answer)?.label ?? input.answer)
+        : input.answer;
     if (ask.kind === "permission") {
       if (!block.approvalEffectId) return null;
       const effect = await tx.externalEffect.updateMany({
@@ -207,7 +215,7 @@ export async function answerLiveDaemonAsk(
         turnId: ask.turnId,
         requestId: ask.requestId,
         behavior,
-        ...(behavior === "answer" ? { message: input.answer } : {}),
+        ...(behavior === "answer" ? { message: answer } : {}),
       },
     });
     if (command.status !== "pending") throw new Error("Daemon connection is unavailable");

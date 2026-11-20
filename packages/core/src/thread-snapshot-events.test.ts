@@ -19,6 +19,52 @@ import {
 } from "./thread-snapshot-events.js";
 
 describe("thread event reduction", () => {
+  it("replaces streamed cards with each complete progress snapshot and its final message", () => {
+    const blocks: ThreadMessage["blocks"] = [
+      { kind: "steps", steps: [{ label: "Read file", count: 1 }] },
+      { kind: "card", lines: [{ k: "Result", v: "Ready" }] },
+      { kind: "text", text: "Current answer" },
+    ];
+    const progress = event({
+      type: "thread.progress",
+      runId: "run-1",
+      seq: 2,
+      payload: { blocks, streaming: true },
+    });
+    const first = reduceThreadSnapshot(snapshot([]), progress);
+    expect(first?.messages).toHaveLength(1);
+    expect(first?.messages[0]).toMatchObject({ id: "progress:run-1", blocks });
+    const nextBlocks: ThreadMessage["blocks"] = [
+      blocks[0]!,
+      blocks[1]!,
+      { kind: "text", text: "Final answer" },
+    ];
+    const next = reduceThreadSnapshot(first, {
+      ...progress,
+      seq: 3,
+      payload: { blocks: nextBlocks, streaming: true },
+    });
+    expect(next?.messages).toHaveLength(1);
+    expect(next?.messages[0]?.blocks).toEqual(nextBlocks);
+    const invalid = reduceThreadSnapshot(next, {
+      ...progress,
+      seq: 4,
+      payload: { blocks: [{ kind: "card", lines: "invalid" }] },
+    });
+    expect(invalid?.messages[0]?.blocks).toEqual(nextBlocks);
+    const final = reduceThreadSnapshot(
+      invalid,
+      event({
+        type: "thread.message.created",
+        runId: "run-1",
+        seq: 5,
+        payload: { messageId: "final", role: "bot", blocks: nextBlocks },
+      }),
+    );
+    expect(final?.messages).toHaveLength(1);
+    expect(final?.messages[0]).toMatchObject({ id: "final", blocks: nextBlocks });
+  });
+
   it("shows a committed direct send as queued before its snapshot refresh returns", () => {
     const initial = snapshot([message("user-1", [{ kind: "text", text: "Continue" }], 4)]);
 

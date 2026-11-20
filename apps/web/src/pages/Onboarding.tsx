@@ -33,6 +33,7 @@ export function OnboardingPage() {
   });
   const { error, modelProbe, setError } = model;
   const createStartedRef = useRef(false);
+  const localBotRef = useRef<string | undefined>(undefined);
   const { signingOut, logOut } = useSignOut("/sign-in", setError);
 
   useEffect(() => {
@@ -40,9 +41,10 @@ export function OnboardingPage() {
       .then(([me, models]) => {
         setBillingEnabled(me.billingEnabled);
         setCatalog(models);
-        const next = me.needsModel ? "model" : "bot";
+        localBotRef.current = me.localBotId;
+        const next = me.needsModel && !me.localBotId ? "model" : "bot";
         setAfterSurvey(next);
-        if (!linkedStep) goTo(me.needsSignupSurvey ? "survey" : next);
+        if (!linkedStep || me.localBotId) goTo(me.needsSignupSurvey ? "survey" : next);
       })
       .catch(() => {
         setAfterSurvey("bot");
@@ -60,6 +62,10 @@ export function OnboardingPage() {
   }, [surveyDone, afterSurvey]);
 
   function goTo(next: "survey" | "model" | "bot") {
+    if (next === "bot" && localBotRef.current) {
+      navigate(`/app/${localBotRef.current}`, { replace: true });
+      return;
+    }
     if (next === "bot") setCreatingBot(true);
     navigate(next === "bot" ? "/onboarding" : `/onboarding/${next}`, { replace: true });
   }

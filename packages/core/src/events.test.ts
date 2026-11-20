@@ -127,6 +127,54 @@ describe("response streaming preference", () => {
 });
 
 describe("reduceLiveMessageBlocks", () => {
+  it("replaces the complete live snapshot without duplicating cards or stale text", () => {
+    const blocks = [
+      { kind: "steps", steps: [{ label: "Read file", count: 1 }] },
+      { kind: "card", lines: [{ k: "Result", v: "Ready" }] },
+      { kind: "text", text: "Current answer" },
+    ];
+    const update = { type: "progress" as const, payload: { blocks, streaming: true } };
+    const first = reduceLiveMessageBlocks([{ kind: "progress", text: "Stale answer" }], update);
+    expect(first).toEqual(blocks);
+    expect(reduceLiveMessageBlocks(first, update)).toEqual(blocks);
+    expect(reduceLiveMessageBlocks(first, { type: "progress", payload: { blocks: [] } })).toEqual(
+      [],
+    );
+  });
+
+  it.each(
+    [
+      null,
+      undefined,
+      "invalid",
+      { kind: "text", text: "not an array" },
+      [{ kind: "unknown" }],
+      [
+        { kind: "text", text: "valid" },
+        { kind: "card", lines: [{ k: "Missing value" }] },
+      ],
+    ].map((blocks) => ({ blocks })),
+  )("rejects an invalid complete snapshot atomically (%j)", ({ blocks }) => {
+    const current = [{ kind: "progress" as const, text: "Keep this answer" }];
+    expect(
+      reduceLiveMessageBlocks(current, {
+        type: "progress",
+        payload: { blocks, text: "Overwrite", delta: "Append", reset: true },
+      }),
+    ).toEqual(current);
+  });
+
+  it("keeps legacy text snapshots and token deltas when blocks are absent", () => {
+    const first = reduceLiveMessageBlocks([], { type: "progress", payload: { text: "Hello" } });
+    expect(first).toEqual([{ kind: "progress", text: "Hello" }]);
+    expect(
+      reduceLiveMessageBlocks(first, { type: "progress", payload: { delta: " world" } }),
+    ).toEqual([{ kind: "progress", text: "Hello world" }]);
+    expect(
+      reduceLiveMessageBlocks(first, { type: "progress", payload: { text: "Replacement" } }),
+    ).toEqual([{ kind: "progress", text: "Replacement" }]);
+  });
+
   it("preserves structured live activity markers", () => {
     expect(
       reduceLiveMessageBlocks([], {

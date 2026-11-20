@@ -310,6 +310,16 @@ it("names the person a reply quotes instead of saying You", () => {
   );
 });
 
+it.each([
+  ["pending", "Pending"],
+  ["connected", "Connected"],
+] as const)("shows a historical connection with its %s status and no action", (status, label) => {
+  renderView("bot", [{ kind: "connect", name: "Mail", initial: "M", color: "blue", status }]);
+  const card = container.querySelector('[data-testid="connection-status-card"]');
+  expect(card?.textContent).toBe(`Mail${label}`);
+  expect(card?.querySelector("button")).toBeNull();
+});
+
 it("speaks the message it renders", () => {
   const onSpeak = vi.fn();
   renderView("bot", [{ kind: "text", text: "Hello" }], { onSpeak, voiceReady: true });

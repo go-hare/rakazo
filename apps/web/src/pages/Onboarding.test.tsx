@@ -87,6 +87,34 @@ it("marks onboarding as usable for the desktop only once a step shows", async ()
   act(() => root.unmount());
 });
 
+it.each(["/onboarding", "/onboarding/model"])(
+  "opens an existing local bot without a model from %s",
+  async (entry) => {
+    const host = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+            <Route path="/app/local-bot" element={<div>Local chat</div>} />
+          </Routes>
+        </MemoryRouter>,
+      ),
+    );
+    await act(async () =>
+      account.load({
+        needsModel: true,
+        localBotId: "local-bot",
+        needsSignupSurvey: false,
+        billingEnabled: false,
+      }),
+    );
+    expect(host.textContent).toBe("Local chat");
+    act(() => root.unmount());
+  },
+);
+
 it("finds and searches a long custom endpoint list during onboarding", async () => {
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(async () =>

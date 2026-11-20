@@ -60,7 +60,9 @@ test("a mermaid fence is drawn as a themed, copyable diagram in place of its cod
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy diagram source" }).click();
   await expect
-    .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
+    .poll(async () =>
+      (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n"),
+    )
     .toBe(flowSource);
   await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
 

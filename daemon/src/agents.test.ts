@@ -17,6 +17,25 @@ const options: LaunchOptions = {
   addDirs: [],
 };
 
+test("原生工具开始和结果解析成同一个step", () => {
+  const session = createSession("claude", null, options);
+  expect(
+    readEvent(session, {
+      type: "stream_event",
+      event: {
+        type: "content_block_start",
+        content_block: { type: "tool_use", id: "tool-1", name: "Bash", input: {} },
+      },
+    }),
+  ).toEqual({ type: "tool", itemId: "tool-1", title: "Bash", phase: "started" });
+  expect(
+    readEvent(session, {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "ok" }] },
+    }),
+  ).toEqual({ type: "tool", itemId: "tool-1", title: "tool", phase: "completed", ok: true });
+});
+
 function plan(over: Partial<LaunchPlan> = {}): LaunchPlan {
   return {
     sessionId: null,

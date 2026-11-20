@@ -29,6 +29,62 @@ afterEach(() => {
 
 import { mobileMessage, snapshot } from "./api-test-helpers";
 
+describe("mobile card text", () => {
+  it.each(["pending", "connected"] as const)(
+    "keeps a historical connection readable when %s",
+    (status) => {
+      expect(
+        blockText(
+          mobileMessage("connection", [
+            { kind: "connect", name: "Mail", initial: "M", color: "blue", status },
+          ]),
+        ),
+      ).toBe(`Mail: ${status}`);
+    },
+  );
+
+  it("keeps every generic card line in order", () => {
+    expect(
+      blockText(
+        mobileMessage("card", [
+          {
+            kind: "card",
+            lines: [
+              { k: "First", v: "One" },
+              { k: "Second", v: "Two" },
+            ],
+          },
+        ]),
+      ),
+    ).toBe("First: One\nSecond: Two");
+  });
+
+  it.each(["draft", "saved"] as const)("keeps a %s skill name and goal readable", (status) => {
+    expect(
+      blockText(
+        mobileMessage("skill", [
+          {
+            kind: "skill_draft",
+            skillId: "skill",
+            name: "Weekly report",
+            goal: "Summarize the week",
+            status,
+            playbook: {
+              whenToUse: "Fridays",
+              inputs: [],
+              steps: ["Collect"],
+              howToCheck: "",
+              whatToReturn: "",
+              approvalBoundaries: "",
+              failureHandling: "",
+            },
+          },
+        ]),
+      ),
+    ).toBe(`Weekly report: ${status}\nSummarize the week`);
+  });
+});
+
 describe("mobile thread refresh targeting", () => {
   it("drops a deferred group A refresh after navigation to group B", async () => {
     let activeGroupId: string | undefined = "group-a";

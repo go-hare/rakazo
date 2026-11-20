@@ -468,6 +468,22 @@ export const MessageView = memo(function MessageView({
             if (!botId) return null;
             return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
           }
+          if (block.kind === "connect") {
+            return (
+              <div
+                key={i}
+                data-testid="connection-status-card"
+                className="flex w-fit max-w-full items-baseline gap-3 rounded-2xl bg-muted px-5 py-4 text-body-lg"
+              >
+                <span className="font-semibold" dir="auto">
+                  {block.name}
+                </span>
+                <span className="text-muted-foreground">
+                  {block.status === "connected" ? <Trans>Connected</Trans> : <Trans>Pending</Trans>}
+                </span>
+              </div>
+            );
+          }
           if (block.kind === "app_connect") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
             if (!botId) return null;

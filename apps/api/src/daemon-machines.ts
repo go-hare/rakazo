@@ -2,59 +2,154 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { createMachines, RunJobPublisher } from "@rakazo/adapters";
+import type { MessageBlock } from "@rakazo/contracts";
 import type { FinalizeRunInput, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLiveDaemonAsk, finalizeRun, runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
+import { createDaemonPresentation } from "./daemon-presentation.js";
 
 const LEASE_OWNER = "daemon";
-
-const streamed = new Set<string>();
 
 export function startDaemonMachines(
   dataDir: string,
   prisma: PrismaClient,
   events: Pick<ThreadEvents, "append" | "notify">,
+  artifacts?: ArtifactStore,
 ) {
   void dataDir;
+  const turns = new Map<
+    string,
+    {
+      text: string;
+      tools: Map<string, { label: string; phase: string; ok?: boolean }>;
+      cards: MessageBlock[];
+      seen: Set<string>;
+    }
+  >();
+  const blocksOf = (turn: NonNullable<ReturnType<typeof turns.get>>): MessageBlock[] => [
+    ...(turn.tools.size
+      ? [
+          {
+            kind: "steps" as const,
+            steps: [...turn.tools.values()].map((tool) => ({
+              label: tool.label,
+              count: 1,
+              ...(tool.phase === "started"
+                ? { note: "Running" }
+                : tool.ok === false
+                  ? { note: "Failed" }
+                  : {}),
+            })),
+          },
+        ]
+      : []),
+    ...turn.cards,
+    ...(turn.text ? [{ kind: "text" as const, text: turn.text }] : []),
+  ];
   const machines = createMachines(
     prisma,
     async (frame) => {
-      // Same four frames as the other app: content.delta, request.opened, item.completed, turn.completed.
       const threadId = typeof frame.threadId === "string" ? frame.threadId : "";
       const turnId = typeof frame.turnId === "string" ? frame.turnId : "";
       const machineId = typeof frame.machineId === "string" ? frame.machineId : "";
-      if (frame.type === "delta" && threadId && typeof frame.text === "string") {
-        if (frame.kind === "reasoning") return;
-        await publishDaemonDelta(prisma, events, machineId, turnId, frame.text);
-      }
-      if (frame.type === "ask" && threadId && typeof frame.summary === "string") {
+      if (!threadId || !turnId) return;
+      const turn: NonNullable<ReturnType<typeof turns.get>> = turns.get(turnId) ?? {
+        text: "",
+        tools: new Map(),
+        cards: [],
+        seen: new Set<string>(),
+      };
+      turns.set(turnId, turn);
+      if (frame.type === "ask" && typeof frame.summary === "string") {
         await openDaemonAsk(prisma, events, frame);
+        return;
       }
-      if (frame.type === "image" && threadId && typeof frame.data === "string") {
-        await publishDaemonNote(prisma, events, machineId, turnId, "[image]");
-      }
-      if (frame.type === "tool" && threadId && typeof frame.title === "string") {
-        await publishDaemonNote(prisma, events, machineId, turnId, frame.title);
-      }
-      if (frame.type === "done" && threadId && turnId) {
-        streamed.delete(turnId);
-        const text = machines.text(turnId)?.text ?? "";
+      if (frame.type === "done") {
         await completeDaemonTurn(prisma, machineId, turnId, {
           ok: frame.ok !== false,
           error: typeof frame.error === "string" ? frame.error : undefined,
-          text,
+          text: turn.text,
+          blocks: blocksOf(turn),
         });
+        turns.delete(turnId);
+        return;
       }
+      if (frame.type === "delta" && frame.kind !== "reasoning" && typeof frame.text === "string")
+        turn.text += frame.text;
+      else if (
+        frame.type === "tool" &&
+        typeof frame.itemId === "string" &&
+        typeof frame.title === "string" &&
+        (frame.phase === "started" || frame.phase === "completed")
+      ) {
+        const prior = turn.tools.get(frame.itemId);
+        if (prior?.phase === "completed" || prior?.phase === frame.phase) return;
+        turn.tools.set(frame.itemId, {
+          label: prior?.label ?? frame.title,
+          phase: frame.phase,
+          ...(typeof frame.ok === "boolean" ? { ok: frame.ok } : {}),
+        });
+      } else if (frame.type === "image" || frame.type === "presentation") {
+        const key =
+          typeof frame.itemId === "string"
+            ? frame.itemId
+            : JSON.stringify([frame.mime, frame.data]);
+        if (turn.seen.has(key)) return;
+        const run = await prisma.run.findFirst({
+          where: { deviceId: machineId, deviceTurnId: turnId, status: "running" },
+          select: { id: true, spaceId: true, threadId: true, userId: true, botId: true },
+        });
+        if (!run) return;
+        try {
+          if (!artifacts) throw new Error("Artifact storage is unavailable");
+          turn.cards.push(
+            await createDaemonPresentation(
+              prisma,
+              artifacts,
+              run,
+              frame.type === "image"
+                ? {
+                    kind: "image",
+                    name: `image.${frame.mime === "image/jpeg" ? "jpg" : frame.mime === "image/gif" ? "gif" : frame.mime === "image/webp" ? "webp" : "png"}`,
+                    mimeType: frame.mime,
+                    data: frame.data,
+                  }
+                : frame.presentation,
+            ),
+          );
+          turn.seen.add(key);
+        } catch (error) {
+          turn.cards.push({
+            kind: "text",
+            text: `Presentation failed: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      } else return;
+      const run = await prisma.run.findFirst({
+        where: { deviceId: machineId, deviceTurnId: turnId, status: "running" },
+        select: { id: true, spaceId: true, threadId: true, botId: true },
+      });
+      if (run)
+        await events.append({
+          spaceId: run.spaceId,
+          threadId: run.threadId,
+          botId: run.botId,
+          runId: run.id,
+          type: "thread.progress",
+          payload: { blocks: blocksOf(turn), streaming: true },
+        });
     },
     async (machineId, turnId) => {
       await completeDaemonTurn(prisma, machineId, turnId, {
         ok: false,
         error: "Connection lost before the turn completed.",
-        text: "",
+        text: turns.get(turnId)?.text ?? "",
+        blocks: turns.has(turnId) ? blocksOf(turns.get(turnId)!) : [],
       });
+      turns.delete(turnId);
     },
   );
   return machines;
@@ -319,7 +414,7 @@ async function completeDaemonTurn(
   prisma: PrismaClient,
   machineId: string,
   turnId: string,
-  frame: { ok: boolean; error?: string; text: string },
+  frame: { ok: boolean; error?: string; text: string; blocks?: MessageBlock[] },
 ) {
   const run = await prisma.run.findFirst({
     where: {
@@ -353,7 +448,7 @@ async function completeDaemonTurn(
           leaseOwner: run.leaseOwner,
           leaseFence: run.leaseFence,
           outcome: "completed",
-          blocks: frame.text ? [{ kind: "text", text: frame.text }] : [],
+          blocks: frame.blocks ?? (frame.text ? [{ kind: "text", text: frame.text }] : []),
         }
       : failed(
           run,
@@ -362,6 +457,7 @@ async function completeDaemonTurn(
           run.leaseFence,
           frame.error ?? "The agent failed.",
           frame.text,
+          frame.blocks,
         ),
   );
 }
@@ -373,6 +469,7 @@ function failed(
   fence: number,
   error: string,
   text = "",
+  blocks?: MessageBlock[],
 ): FinalizeRunInput {
   return {
     spaceId: run.spaceId,
@@ -385,62 +482,12 @@ function failed(
     leaseFence: fence,
     outcome: "failed",
     error,
-    ...(text ? { partialReply: [{ kind: "text" as const, text }] } : {}),
+    ...(blocks?.length
+      ? { partialReply: blocks }
+      : text
+        ? { partialReply: [{ kind: "text" as const, text }] }
+        : {}),
   };
-}
-
-async function publishDaemonDelta(
-  prisma: PrismaClient,
-  events: Pick<ThreadEvents, "append">,
-  machineId: string,
-  turnId: string,
-  text: string,
-) {
-  const run = await prisma.run.findFirst({
-    where: {
-      deviceId: machineId,
-      deviceTurnId: turnId,
-      status: "running",
-    },
-    select: { id: true, spaceId: true, threadId: true, botId: true },
-  });
-  if (!run) return;
-  const first = !streamed.has(turnId);
-  streamed.add(turnId);
-  await events.append({
-    spaceId: run.spaceId,
-    threadId: run.threadId,
-    botId: run.botId,
-    type: "thread.progress",
-    runId: run.id,
-    payload: first ? { text, streaming: true } : { delta: text, streaming: true },
-  });
-}
-
-async function publishDaemonNote(
-  prisma: PrismaClient,
-  events: Pick<ThreadEvents, "append">,
-  machineId: string,
-  turnId: string,
-  summary: string,
-) {
-  const run = await prisma.run.findFirst({
-    where: {
-      deviceId: machineId,
-      deviceTurnId: turnId,
-      status: "running",
-    },
-    select: { id: true, spaceId: true, threadId: true, botId: true },
-  });
-  if (!run) return;
-  await events.append({
-    spaceId: run.spaceId,
-    threadId: run.threadId,
-    botId: run.botId,
-    type: "thread.progress",
-    runId: run.id,
-    payload: { text: summary, streaming: true },
-  });
 }
 
 async function openDaemonAsk(
@@ -499,7 +546,24 @@ async function openDaemonAsk(
               { id: "deny", label: "Deny" },
             ],
           }
-        : { kind: "ask", text: summary, status: "pending", input: "text" },
+        : {
+            kind: "ask",
+            text: summary,
+            status: "pending",
+            input: "text",
+            ...(Array.isArray(frame.choices) &&
+            frame.choices.length <= 20 &&
+            frame.choices.every(
+              (choice) => typeof choice === "string" && choice.length > 0 && choice.length <= 200,
+            )
+              ? {
+                  actions: frame.choices.map((choice, index) => ({
+                    id: `choice-${index}`,
+                    label: choice as string,
+                  })),
+                }
+              : {}),
+          },
   });
   if (created) {
     await events.notify(threadId, created.seq).catch((error) => {

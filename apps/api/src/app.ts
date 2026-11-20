@@ -389,7 +389,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ),
       runs!,
     );
-  const daemonMachines = startDaemonMachines(env.dataDir, prisma, events);
+  const artifacts = createArtifactStore(env.dataDir, prisma);
+  const daemonMachines = startDaemonMachines(env.dataDir, prisma, events, artifacts);
   bindDaemonMachines(daemonMachines);
   attachDaemonRuns(jobs, prisma, daemonMachines, events);
   const ticketChanges = createTicketChangeNotifier({
@@ -420,7 +421,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
-  const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
   // This process registers the inbound sink, so it must hold Telegram's getUpdates connection.
   const messagingPlatforms = messagingPlatformsFromEnv(env, { pollInboundMessages: true }).filter(

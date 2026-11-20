@@ -156,6 +156,11 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
     : askActions;
   const optionQuestion =
     !approvalActions && !block.instructionUpdate && Boolean(askActions?.length);
+  const textQuestion =
+    block.input === "text" &&
+    !block.approvalEffectId &&
+    !block.instructionUpdate &&
+    !askActions?.length;
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
   // An edited draft is shown in the user's words, so the card reads as answered. A typed reply to
@@ -165,7 +170,7 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
     !optionQuestion &&
     !approvalActions &&
     !block.instructionUpdate &&
-    displayedAnswer !== "approved"
+    (textQuestion || displayedAnswer !== "approved")
       ? displayedAnswer
       : undefined;
   async function submitAnswer(value: string) {
@@ -356,7 +361,7 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
             </Button>
           ))}
         </div>
-      ) : editing ? (
+      ) : editing || textQuestion ? (
         <form
           className="mt-3.5 flex flex-col gap-2"
           onSubmit={(event) => {
@@ -374,16 +379,18 @@ function PromptAskCard({ block, canAnswer, onAnswer, rpc = selectedSpaceRpc }: A
             <Button type="submit" disabled={!answer.trim() || submitting}>
               {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
             </Button>
-            <Button
-              variant="outline"
-              disabled={submitting}
-              onClick={() => {
-                setAnswer("");
-                setEditing(false);
-              }}
-            >
-              <Trans>Cancel</Trans>
-            </Button>
+            {!textQuestion ? (
+              <Button
+                variant="outline"
+                disabled={submitting}
+                onClick={() => {
+                  setAnswer("");
+                  setEditing(false);
+                }}
+              >
+                <Trans>Cancel</Trans>
+              </Button>
+            ) : null}
           </div>
         </form>
       ) : (

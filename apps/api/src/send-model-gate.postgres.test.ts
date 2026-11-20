@@ -144,6 +144,43 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     expect(await userMessages(thread.id)).toBe(3);
   });
 
+  it("starts a bound local bot for a new account without any model credentials", async () => {
+    await system.userModelCredential.deleteMany({ where: { userId: actor.userId } });
+    const machine = await system.daemonMachine.create({
+      data: {
+        id: randomUUID(),
+        userId: actor.userId,
+        name: "Test computer",
+        tokenHash: randomUUID(),
+        connectionId: randomUUID(),
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        assignments: { create: { botId, cwd: "/test" } },
+      },
+    });
+    const accepted = await send({ botId, text: "local work", clientNonce: randomUUID() });
+    expect(accepted.status).toBe(200);
+    const run = await system.run.findFirstOrThrow({ where: { botId, userId: actor.userId } });
+    expect(run).toMatchObject({
+      botId,
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      status: "queued",
+    });
+    expect(enqueue).toHaveBeenCalled();
+    await system.daemonMachine.update({
+      where: { id: machine.id },
+      data: { leaseExpiresAt: new Date(0) },
+    });
+    const offline = await send({ botId, text: "offline" });
+    expect(offline.status).toBe(400);
+    await expect(offline.json()).resolves.toMatchObject({
+      json: { message: "Reconnect this bot's computer and try again." },
+    });
+    await system.daemonAssignment.delete({ where: { botId } });
+    await expectRefused(await send({ botId, text: "server work" }));
+    expect(await system.run.count({ where: { botId } })).toBe(1);
+  });
+
   it("lets a bare stop end active work without a model, and refuses it when idle", async () => {
     const thread = await system.thread.findFirstOrThrow({ where: { botId } });
     await expectRefused(await send({ botId, text: "stop" }));

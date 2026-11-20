@@ -68,7 +68,9 @@ test("markdown tables render as an interactive card", async ({ page }, testInfo)
   const expectedTsv = ["Item\tQty", ...sorted.map(({ item, qty }) => `${item}\t${qty}`)].join("\n");
   await card.getByRole("button", { name: "Copy rows" }).click();
   await expect
-    .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
+    .poll(async () =>
+      (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n"),
+    )
     .toBe(expectedTsv);
 
   const [download] = await Promise.all([

@@ -1,5 +1,12 @@
 export * from "@rakazo/core/plot";
 
+export async function validatePlotPresentation(spec: unknown, data: unknown[]): Promise<void> {
+  const { renderPlotSpecToSvg } = await import("@rakazo/core/plot");
+  const { JSDOM } = await import("jsdom");
+  const document = new JSDOM("").window.document;
+  renderPlotSpecToSvg(spec as Parameters<typeof renderPlotSpecToSvg>[0], data, document);
+}
+
 /** Rasterize a rendered plot SVG to an opaque PNG. The SVG's CSS background is
     not honored by all rasterizers, and a transparent chart is unreadable on
     dark chat themes, so the alpha channel is flattened onto white. */

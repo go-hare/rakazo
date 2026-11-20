@@ -1,4 +1,5 @@
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type { ThreadMessage } from "@rakazo/contracts";
+import { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
 import { payloadAuthor } from "./message-replies.js";
@@ -306,6 +307,10 @@ export function reduceLiveMessageBlocks(
   current: readonly MessageBlock[],
   update: LiveMessageUpdate,
 ): MessageBlock[] {
+  if (update.type === "progress" && update.payload && "blocks" in update.payload) {
+    const parsed = MessageBlock.array().safeParse(update.payload.blocks);
+    return parsed.success ? parsed.data : [...current];
+  }
   // A reset drops the text streamed so far (it will not be in the reply) and keeps the steps,
   // including tools still waiting on that text to finish its sentence.
   let blocks = current;

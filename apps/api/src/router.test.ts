@@ -638,6 +638,7 @@ describe("billing", () => {
           secrets: [],
         }),
       },
+      bot: { findMany: vi.fn().mockResolvedValue([]) },
       signupSurvey: { upsert: upsertSignupSurvey },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -2372,6 +2373,7 @@ describe("MCP server health", () => {
         }),
         updateMany,
       },
+      bot: { findMany: vi.fn().mockResolvedValue([]) },
       mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
       user: {

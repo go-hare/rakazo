@@ -69,7 +69,88 @@ test("main 的审批代理在 broker 确实不存在时拒绝请求", async () =
   });
 });
 
-function callProxy(socketPath: string): Promise<ProxyReply> {
+test("展示入口将产物描述符通过真实proxy交给broker", async () => {
+  const received: unknown[] = [];
+  const broker = await openBroker(
+    () => {},
+    (itemId, presentation) => received.push({ itemId, presentation }),
+  );
+  try {
+    const presentation = {
+      kind: "file",
+      name: "note.txt",
+      mimeType: "text/plain",
+      data: "aGVsbG8=",
+    };
+    const reply = await callProxy(broker.socketPath, {
+      name: "present",
+      arguments: { presentation },
+    });
+    expect(received).toEqual([{ itemId: expect.any(String), presentation }]);
+    expect(reply.result.content[0]?.text).toContain("queued");
+  } finally {
+    broker.close();
+  }
+});
+
+test("文本问答通过真实proxy回传", async () => {
+  const broker = await openBroker((ask) => {
+    expect(ask.summary).toBe("做什么？");
+    broker.answer(ask.requestId, { behavior: "answer", message: "继续" });
+  });
+  try {
+    const reply = await callProxy(broker.socketPath, {
+      name: "ask_user",
+      arguments: { question: "做什么？" },
+    });
+    expect(reply.result.content[0]?.text).toBe("继续");
+  } finally {
+    broker.close();
+  }
+});
+
+test("多题审批保留问题和选项，并分别回传原问题的答案", async () => {
+  const received: BrokerAsk[] = [];
+  const broker = await openBroker((ask) => {
+    received.push(ask);
+    broker.answer(ask.requestId, {
+      behavior: "answer",
+      message: ask.summary === "颜色？" ? "蓝色" : "猫",
+    });
+  });
+  try {
+    const reply = await callProxy(broker.socketPath, {
+      name: "approve",
+      arguments: {
+        tool_name: "AskUserQuestion",
+        input: {
+          questions: [
+            {
+              question: "颜色？",
+              options: [{ label: "蓝色", description: "冷色" }, { label: "红色" }],
+            },
+            { question: "动物？", options: [{ label: "猫" }, { label: "狗" }] },
+          ],
+        },
+      },
+    });
+    expect(received.map((ask) => ({ summary: ask.summary, choices: ask.choices }))).toEqual([
+      { summary: "颜色？", choices: ["蓝色", "红色"] },
+      { summary: "动物？", choices: ["猫", "狗"] },
+    ]);
+    expect(JSON.parse(reply.result.content[0]?.text ?? "").updatedInput.answers).toEqual({
+      "颜色？": "蓝色",
+      "动物？": "猫",
+    });
+  } finally {
+    broker.close();
+  }
+});
+
+function callProxy(
+  socketPath: string,
+  params: unknown = { name: "approve", arguments: { tool_name: "Bash", input } },
+): Promise<ProxyReply> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
@@ -112,7 +193,7 @@ function callProxy(socketPath: string): Promise<ProxyReply> {
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: "approve", arguments: { tool_name: "Bash", input } },
+        params,
       })}\n`,
     );
   });

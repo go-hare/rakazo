@@ -16,6 +16,11 @@ import {
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import { isAdmin } from "../admins.js";
+import {
+  botExecutionTarget,
+  daemonAssignmentSelection,
+  localOnboardingBot,
+} from "../bot-execution-target.js";
 import { effectiveSandboxProvider } from "../computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
 
@@ -58,6 +63,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     isDeploymentOwner: false,
     isAdmin: admin,
     needsModel: setup.needsModel,
+    localBotId: await localOnboardingBot(deps.prisma, actor),
     defaultProvider: canonicalPiProviderId(setup.model?.provider ?? deps.env.defaultProvider),
     defaultModel: setup.model?.modelId ?? deps.env.defaultModel,
     // Set only while the active default is the deployment's own, running on host credentials.
@@ -137,14 +143,37 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
   };
 }
 
-/** Whether every bot runs its own model on one of the member's connections, as a run selects it. */
-export async function botsRunOwnModels(deps: RouterDeps, actor: Actor, botIds: string[]) {
+export async function botsCanRun(
+  deps: RouterDeps,
+  actor: Actor,
+  botIds: string[],
+  mainAvailable: boolean,
+  unavailable: "reject" | "skip" = "reject",
+) {
   const bots = await deps.prisma.bot.findMany({
-    where: { id: { in: botIds }, spaceId: actor.spaceId },
-    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+    where: {
+      id: { in: botIds },
+      spaceId: actor.spaceId,
+      space: { memberships: { some: { userId: actor.userId } } },
+    },
+    select: {
+      modelProvider: true,
+      modelId: true,
+      thinkingLevel: true,
+      daemonAssignment: daemonAssignmentSelection,
+    },
   });
+  if (bots.length !== new Set(botIds).size) throw new ORPCError("FORBIDDEN");
   const credentials = await Promise.all(
     bots.map(async (bot) => {
+      const target = await botExecutionTarget(deps.prisma, actor, bot.daemonAssignment);
+      if (target === "unavailable") {
+        if (unavailable === "skip") return false;
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Reconnect this bot's computer and try again.",
+        });
+      }
+      if (target === "local" || mainAvailable) return true;
       const overrideCredential = bot.modelProvider
         ? await findConnectedModelCredential(
             deps.prisma,

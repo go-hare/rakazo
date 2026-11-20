@@ -22,6 +22,7 @@ import type {
   DoneFrame,
   ImageFrame,
   LaunchOptions,
+  PresentationFrame,
   ToolFrame,
   TurnImage,
   UsageFrame,
@@ -80,7 +81,14 @@ const live = new Map<string, LiveAgent>();
 const OPEN_TIMEOUT_MS = 30_000;
 
 export type AgentEmit = (
-  frame: DeltaFrame | DoneFrame | AskFrame | ToolFrame | UsageFrame | ImageFrame,
+  frame:
+    | DeltaFrame
+    | DoneFrame
+    | AskFrame
+    | ToolFrame
+    | UsageFrame
+    | ImageFrame
+    | PresentationFrame,
 ) => void;
 
 /**
@@ -219,10 +227,28 @@ async function spawnAgent(turn: AgentTurn): Promise<LiveAgent> {
   const broker =
     turn.options.permission === "bypassPermissions"
       ? null
-      : await openBroker((ask) => {
-          const current = live.get(turn.threadId);
-          current?.emit?.({ type: "ask", threadId: turn.threadId, turnId: current.turnId, ...ask });
-        });
+      : await openBroker(
+          (ask) => {
+            const current = live.get(turn.threadId);
+            current?.emit?.({
+              type: "ask",
+              threadId: turn.threadId,
+              turnId: current.turnId,
+              ...ask,
+            });
+          },
+          (itemId, presentation) => {
+            const current = live.get(turn.threadId);
+            if (!current || current.settled) throw new Error("No active turn");
+            current.emit?.({
+              type: "presentation",
+              threadId: turn.threadId,
+              turnId: current.turnId,
+              itemId,
+              presentation,
+            });
+          },
+        );
   const plan = launchPlan(turn, saved, broker?.socketPath ?? null);
   let child: LiveAgent["process"];
   try {
@@ -309,6 +335,17 @@ async function read(agent: LiveAgent, emit: AgentEmit): Promise<void> {
 }
 
 async function onLine(agent: LiveAgent, line: Record<string, unknown>): Promise<void> {
+  const content = (line.message as { content?: unknown } | undefined)?.content;
+  if (
+    agent.kind === "claude" &&
+    line.type === "user" &&
+    Array.isArray(content) &&
+    content.length > 1
+  ) {
+    for (const block of content)
+      await onLine(agent, { ...line, message: { ...(line.message as object), content: [block] } });
+    return;
+  }
   const event = readEvent(agent.session, line);
   if (!event || !agent.emit) return;
   if (event.type === "session") {
