@@ -124,9 +124,11 @@ export async function runTurn(
         opening.opening = null;
       });
     }
+    agent.asks.clear();
     agent.emit = emit;
     agent.turnId = turn.turnId;
     agent.settled = false;
+    agent.session.nextId++;
     await agent.opening;
     if (signal?.aborted) {
       retire(agent);
