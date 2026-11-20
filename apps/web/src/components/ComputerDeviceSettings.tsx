@@ -74,7 +74,7 @@ export function ComputerDeviceSettings() {
                 label={<span className="truncate">{bot.name}</span>}
                 control={
                   <form
-                    className="flex min-w-0 items-center gap-2"
+                    className="flex min-w-0 flex-wrap items-center gap-2"
                     onSubmit={(event) => {
                       event.preventDefault();
                       const data = new FormData(event.currentTarget);
@@ -87,6 +87,7 @@ export function ComputerDeviceSettings() {
                     }}
                   >
                     <NativeSelect
+                      className="max-w-full min-w-28 shrink-0"
                       name="machine"
                       aria-label={t`${bot.name} runs on`}
                       defaultValue={pin?.machineId ?? ""}
@@ -100,6 +101,7 @@ export function ComputerDeviceSettings() {
                       ))}
                     </NativeSelect>
                     <NativeSelect
+                      className="max-w-full min-w-24 shrink-0"
                       name="agent"
                       aria-label={t`${bot.name} agent`}
                       defaultValue={pin?.agent ?? "claude"}
@@ -109,7 +111,7 @@ export function ComputerDeviceSettings() {
                       <NativeSelectOption value="codex">codex</NativeSelectOption>
                       <NativeSelectOption value="grok">grok</NativeSelectOption>
                     </NativeSelect>
-                    <Field>
+                    <Field className="min-w-0 flex-1 basis-40">
                       <FieldLabel htmlFor={`${cwdId}-${bot.id}`} className="sr-only">
                         <Trans>Directory</Trans>
                       </FieldLabel>
@@ -121,7 +123,7 @@ export function ComputerDeviceSettings() {
                         disabled={pending}
                       />
                     </Field>
-                    <Button type="submit" size="sm" disabled={pending}>
+                    <Button type="submit" size="sm" className="shrink-0" disabled={pending}>
                       <Trans>Save</Trans>
                     </Button>
                   </form>

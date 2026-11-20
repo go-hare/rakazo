@@ -5,7 +5,7 @@ import type { Duplex } from "node:stream";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { createMachines, RunJobPublisher } from "@rakazo/adapters";
 import type { FinalizeRunInput, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { createLiveDaemonAsk, finalizeRun } from "@rakazo/db";
+import { createLiveDaemonAsk, finalizeRun, runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 
@@ -122,10 +122,14 @@ export function mountDaemonMachines(
   app.get("/api/machines", async (c) => {
     const user = await session(c.req.raw);
     if (!user) return c.json({ error: "sign in first" }, 401);
-    return c.json({
-      machines: await machines.list(user.userId),
-      pins: await machines.assignments(user.userId),
-    });
+    const result = await runAsSystem(
+      "list the signed-in account's machines and bot bindings",
+      async () => ({
+        machines: await machines.list(user.userId),
+        pins: await machines.assignments(user.userId),
+      }),
+    );
+    return c.json(result);
   });
   app.delete("/api/machines/:machineId", async (c) => {
     const user = await session(c.req.raw);
@@ -138,13 +142,15 @@ export function mountDaemonMachines(
   app.post("/api/bots/:botId/machine", async (c) => {
     const user = await session(c.req.raw);
     if (!user) return c.json({ error: "sign in first" }, 401);
-    const bot = await prisma.bot.findFirst({
-      where: {
-        id: c.req.param("botId"),
-        space: { memberships: { some: { userId: user.userId } } },
-      },
-      select: { id: true },
-    });
+    const bot = await runAsSystem("resolve a bot in the signed-in account's spaces", () =>
+      prisma.bot.findFirst({
+        where: {
+          id: c.req.param("botId"),
+          space: { memberships: { some: { userId: user.userId } } },
+        },
+        select: { id: true, spaceId: true },
+      }),
+    );
     if (!bot) return c.json({ error: "没有这个 bot" }, 404);
     const body = (await c.req.json().catch(() => null)) as {
       machineId?: unknown;
@@ -152,13 +158,18 @@ export function mountDaemonMachines(
       agent?: unknown;
     } | null;
     if (body?.machineId === "") {
-      await machines.unpin(bot.id, user.userId);
+      await runAsTenant({ spaceId: bot.spaceId, userId: user.userId }, () =>
+        machines.unpin(bot.id, user.userId),
+      );
       return c.json({ ok: true });
     }
     const machineId = typeof body?.machineId === "string" ? body.machineId : "";
     const cwd = typeof body?.cwd === "string" ? body.cwd : "";
     const agent = typeof body?.agent === "string" ? body.agent : undefined;
-    if (!(await machines.pin(c.req.param("botId"), machineId, cwd, agent, user.userId))) {
+    const pinned = await runAsTenant({ spaceId: bot.spaceId, userId: user.userId }, () =>
+      machines.pin(bot.id, machineId, cwd, agent, user.userId),
+    );
+    if (!pinned) {
       return c.json({ error: "没有这台机器，或者没给目录" }, 400);
     }
     return c.json({ ok: true });
