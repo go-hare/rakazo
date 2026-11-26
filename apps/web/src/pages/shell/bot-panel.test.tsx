@@ -316,6 +316,37 @@ it("shows the profile and the Advanced tab's controls", async () => {
   ]);
 });
 
+it("hides sandbox computers when they are off", async () => {
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <BotSettings
+          onOpenConnections={() => undefined}
+          bot={bot()}
+          computersAvailable={false}
+          memoryProviderConfigured={false}
+          onSave={onSave}
+          onExport={onExport}
+          onClear={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+  });
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+    "Routines",
+    "Pages",
+    "Advanced",
+  ]);
+  const options = [...container.querySelectorAll('[id$="-disabled-tools"] option')].map(
+    (option) => option.textContent,
+  );
+  expect(options).not.toContain("Computer observe");
+  expect(options).not.toContain("Shell");
+  expect(options).toContain("Ask user");
+  expect(options).toContain("User computer shell");
+});
+
 describe("BotSettings model choices", () => {
   it("offers an email address under the name until the bot has one", async () => {
     vi.mocked(rpc.bots.emailAddress).mockResolvedValueOnce({ domain: "bots.test", address: null });

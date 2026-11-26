@@ -3,7 +3,7 @@ import type { ComputerMode, ReplyMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
-  BUILTIN_TOOL_NAMES,
+  builtinToolsForDisableList,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import {
@@ -197,24 +197,29 @@ export function ModelSection({
 export function ComputerGroup({
   computerMode,
   onComputerModeChange,
+  computersAvailable = true,
   memoryProviderConfigured,
   memoryScope,
   onMemoryScopeChange,
 }: {
   computerMode: ComputerMode;
   onComputerModeChange: (mode: ComputerMode) => void;
+  computersAvailable?: boolean;
   memoryProviderConfigured: boolean;
   memoryScope: MemoryScope;
   onMemoryScopeChange: (scope: MemoryScope) => void;
 }) {
   const { t } = useLingui();
+  if (!computersAvailable && !memoryProviderConfigured) return null;
   return (
-    <BotPanelGroup label={t`Computer`} plain>
-      <ComputerModePicker value={computerMode} onChange={onComputerModeChange} />
+    <BotPanelGroup label={computersAvailable ? t`Computer` : t`Memory scope`} plain>
+      {computersAvailable ? (
+        <ComputerModePicker value={computerMode} onChange={onComputerModeChange} />
+      ) : null}
       {memoryProviderConfigured ? (
-        <div className="mt-4 text-body text-foreground">
-          <Trans>Memory scope</Trans>
-          <div className="mt-2 flex gap-2">
+        <div className={`${computersAvailable ? "mt-4" : ""} text-body text-foreground`}>
+          {computersAvailable ? <Trans>Memory scope</Trans> : null}
+          <div className={`${computersAvailable ? "mt-2" : ""} flex gap-2`}>
             {(
               [
                 { value: null, label: t`Inherit default` },
@@ -419,15 +424,19 @@ export function DescriptionGroup({
 export function ToolsGroup({
   ids,
   disabledBuiltinTools,
+  computersAvailable = true,
   onDisable,
   onEnable,
 }: {
   ids: string;
   disabledBuiltinTools: string[];
+  computersAvailable?: boolean;
   onDisable: (name: string) => void;
   onEnable: (name: string) => void;
 }) {
   const { t } = useLingui();
+  const offered = builtinToolsForDisableList(computersAvailable);
+  const offeredSet = new Set<string>(offered);
   return (
     <BotPanelGroup label={t`Tools`} plain>
       <section data-testid="bot-settings-tools">
@@ -441,33 +450,35 @@ export function ToolsGroup({
               className="w-full"
             >
               <NativeSelectOption value="">{t`Disable a tool`}</NativeSelectOption>
-              {BUILTIN_TOOL_NAMES.filter((name) => !disabledBuiltinTools.includes(name)).map(
-                (name) => (
+              {offered
+                .filter((name) => !disabledBuiltinTools.includes(name))
+                .map((name) => (
                   <NativeSelectOption key={name} value={name}>
                     {humanizeTool(name)}
                   </NativeSelectOption>
-                ),
-              )}
+                ))}
             </NativeSelect>
           </div>
-          {disabledBuiltinTools.map((toolName) => (
-            <div
-              key={toolName}
-              className="flex min-h-11 items-center justify-between gap-3 text-body"
-            >
-              <span>{humanizeTool(toolName)}</span>
-              <Button
-                id={`${ids}-disabled-${toolName}`}
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t`Enable ${humanizeTool(toolName)}`}
-                title={t`Enable ${humanizeTool(toolName)}`}
-                onClick={() => onEnable(toolName)}
+          {disabledBuiltinTools
+            .filter((toolName) => offeredSet.has(toolName))
+            .map((toolName) => (
+              <div
+                key={toolName}
+                className="flex min-h-11 items-center justify-between gap-3 text-body"
               >
-                <X className="size-4" />
-              </Button>
-            </div>
-          ))}
+                <span>{humanizeTool(toolName)}</span>
+                <Button
+                  id={`${ids}-disabled-${toolName}`}
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t`Enable ${humanizeTool(toolName)}`}
+                  title={t`Enable ${humanizeTool(toolName)}`}
+                  onClick={() => onEnable(toolName)}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+            ))}
         </div>
       </section>
     </BotPanelGroup>

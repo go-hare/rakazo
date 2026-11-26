@@ -1,6 +1,6 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openBotPanelTab, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 async function patchJson(route: Route, patch: (body: { json?: Record<string, unknown> }) => void) {
   const response = await route.fetch();
@@ -57,27 +57,12 @@ test("unavailable computers say so plainly and link setup help", async ({ page }
   );
   await page.reload();
 
-  await openBotPanelTab(page, "Computer");
-  const preview = page.getByTestId("computer-preview");
-  const hint = preview.getByTestId("computers-unavailable-hint");
-  await expect(hint.getByText("Computers are off on this server.", { exact: true })).toBeVisible();
-  await expect(hint).not.toContainText("SANDBOX_");
-  await expect(hint).not.toContainText(".env");
-  await expect(hint.getByRole("button", { name: "Check again" })).toBeVisible();
-  await expect(hint.getByRole("button", { name: "Open computer settings" })).toBeVisible();
-  await expect(hint.getByRole("link", { name: "Setup help" })).toHaveAttribute(
-    "href",
-    "https://github.com/elie222/rakazo/blob/main/docs/self-host-sandbox-providers.md",
-  );
-  await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "computers-unavailable-preview");
+  await page.getByTestId("bot-settings-trigger").click();
+  const botSettings = page.getByTestId("bot-settings");
+  await expect(botSettings.getByRole("tab", { name: "Routines", exact: true })).toBeVisible();
+  await expect(botSettings.getByRole("tab", { name: "Computer", exact: true })).toHaveCount(0);
 
-  await hint.getByRole("button", { name: "Check again" }).click();
-  await expect(hint.getByText("Computers are off on this server.", { exact: true })).toBeVisible();
-  await expect(hint.getByRole("button", { name: "Check again" })).toBeEnabled();
-
-  await hint.getByRole("button", { name: "Open computer settings" }).click();
-  const settings = page.getByTestId("user-settings");
+  const settings = await openUserSettings(page, "computer");
   await expect(settings).toHaveAttribute("data-settings-section", "computer");
   await expect(settings.getByTestId("settings-nav-computer")).toHaveAttribute(
     "aria-current",

@@ -198,8 +198,18 @@ function SpaceShell() {
   const enterToSend = composerEnterToSendPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
+  const computersAvailable =
+    bootstrapMe != null && !computersAreUnavailable(bootstrapMe.sandboxProvider);
+  useEffect(() => {
+    if (panel === "computer" && !computersAvailable) setPanel("settings");
+  }, [panel, computersAvailable, setPanel]);
   const lastBotTab = useRef<Panel>("routines");
-  if (panel === "routines" || panel === "computer" || panel === "pages" || panel === "settings")
+  if (
+    panel === "routines" ||
+    panel === "pages" ||
+    panel === "settings" ||
+    (panel === "computer" && computersAvailable)
+  )
     lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
@@ -1213,6 +1223,7 @@ function SpaceShell() {
         rpc={rpc}
         panel={panel}
         setPanel={setPanel}
+        computersAvailable={computersAvailable}
         active={active}
         activeGroup={activeGroup}
         bots={bots}

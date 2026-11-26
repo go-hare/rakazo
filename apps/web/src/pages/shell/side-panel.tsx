@@ -49,6 +49,7 @@ export function ShellSidePanel({
   modelFocusRequest,
   openSettings,
   memoryProviderConfigured,
+  computersAvailable = true,
   setAgentSkills,
   onClearBot,
   discardChatAttachments,
@@ -77,6 +78,7 @@ export function ShellSidePanel({
   modelFocusRequest: number;
   openSettings: (section: SettingsSection) => void;
   memoryProviderConfigured: boolean;
+  computersAvailable?: boolean;
   setAgentSkills: (skills: AgentSkillCatalogEntry[]) => void;
   onClearBot: (bot: Bot) => void;
   /** Drops a deleted chat's pending attachments with their previews. */
@@ -86,7 +88,9 @@ export function ShellSidePanel({
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
   const botTab =
     panel === "computer" || panel === "routines" || panel === "pages" || panel === "settings"
-      ? panel
+      ? panel === "computer" && !computersAvailable
+        ? "settings"
+        : panel
       : null;
 
   async function createGroup(input: { name: string; botIds: string[] }) {
@@ -115,6 +119,7 @@ export function ShellSidePanel({
               ) : null}
               <div className="ml-auto flex gap-1">
                 {active &&
+                computersAvailable &&
                 panel === "computer" &&
                 !computerOpen &&
                 computerPanelNeedsMaintenance(computer?.state, booting) ? (
@@ -191,6 +196,7 @@ export function ShellSidePanel({
               key={active.id}
               bot={active}
               tab={botTab}
+              computersAvailable={computersAvailable}
               onTabChange={(tab: BotPanelTab) => {
                 setPanel(tab);
                 if (tab === "computer") void refreshThread(active.id).catch(() => undefined);

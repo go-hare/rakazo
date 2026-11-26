@@ -72,6 +72,7 @@ export function BotSettings({
   onTabChange,
   computer,
   routines,
+  computersAvailable = true,
   memoryProviderConfigured,
   onSave,
   onExport,
@@ -84,6 +85,8 @@ export function BotSettings({
   onTabChange?: (tab: BotPanelTab) => void;
   computer?: ReactNode;
   routines?: ReactNode;
+  /** False when this deployment has no sandbox computer. Daemon bindings stay in Settings. */
+  computersAvailable?: boolean;
   focusModel?: number;
   onOpenConnections?: () => void;
   /** Unused: the skill sections read and save the shared cached skill list. */
@@ -114,13 +117,14 @@ export function BotSettings({
 }) {
   const { t } = useLingui();
   const ids = useId();
+  const visibleTab = tab === "computer" && !computersAvailable ? "settings" : tab;
   const modelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (focusModel && tab === "settings") {
+    if (focusModel && visibleTab === "settings") {
       modelRef.current?.scrollIntoView?.({ block: "nearest" });
       modelRef.current?.querySelector<HTMLElement>('[id$="-model"]')?.focus();
     }
-  }, [tab, focusModel]);
+  }, [visibleTab, focusModel]);
   const [name, setName] = useState(bot.name);
   const savedNameRef = useRef(bot.name);
   const [description, setDescription] = useState(bot.description);
@@ -527,11 +531,13 @@ export function BotSettings({
         />
         <BotEmail bot={{ id: bot.id, name }} />
       </div>
-      <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
+      <Tabs value={visibleTab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
         <TabsList className="w-full">
-          <TabsTrigger value="computer">
-            <Trans>Computer</Trans>
-          </TabsTrigger>
+          {computersAvailable ? (
+            <TabsTrigger value="computer">
+              <Trans>Computer</Trans>
+            </TabsTrigger>
+          ) : null}
           <TabsTrigger value="routines">
             <Trans>Routines</Trans>
           </TabsTrigger>
@@ -542,14 +548,16 @@ export function BotSettings({
             <Trans>Advanced</Trans>
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="computer" className="pt-4">
-          {computer}
-        </TabsContent>
+        {computersAvailable ? (
+          <TabsContent value="computer" className="pt-4">
+            {computer}
+          </TabsContent>
+        ) : null}
         <TabsContent value="routines" className="pt-4">
           {routines}
         </TabsContent>
         <TabsContent value="pages" className="pt-4">
-          {tab === "pages" ? <PagesList botId={bot.id} /> : null}
+          {visibleTab === "pages" ? <PagesList botId={bot.id} /> : null}
         </TabsContent>
         {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
         <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">
@@ -590,6 +598,7 @@ export function BotSettings({
             <ComputerGroup
               computerMode={computerMode}
               onComputerModeChange={setComputerMode}
+              computersAvailable={computersAvailable}
               memoryProviderConfigured={memoryProviderConfigured}
               memoryScope={memoryScope}
               onMemoryScopeChange={setMemoryScope}
@@ -640,6 +649,7 @@ export function BotSettings({
             <ToolsGroup
               ids={ids}
               disabledBuiltinTools={disabledBuiltinTools}
+              computersAvailable={computersAvailable}
               onDisable={disableBuiltinTool}
               onEnable={(toolName) => {
                 const next = disabledBuiltinTools.filter((entry) => entry !== toolName);

@@ -108,6 +108,23 @@ export const BUILTIN_TOOL_NAMES = [
   "message_agent",
 ] as const;
 
+/** Tools that only exist on a sandbox computer, not the user's daemon machine. */
+export const SANDBOX_COMPUTER_TOOL_NAMES = [
+  "computer_observe",
+  "computer_act",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_act",
+  "list_files",
+  "read_file",
+  "write_file",
+  "attach_file",
+  "shell",
+  "open_path",
+  "launch_app",
+  "request_takeover",
+] as const;
+
 export const BuiltinToolNameSchema = z.enum(BUILTIN_TOOL_NAMES);
 export type BuiltinToolName = z.infer<typeof BuiltinToolNameSchema>;
 
@@ -115,6 +132,16 @@ const builtinToolNameSet: ReadonlySet<string> = new Set(BUILTIN_TOOL_NAMES);
 
 export function isBuiltinToolName(name: string): name is BuiltinToolName {
   return builtinToolNameSet.has(name);
+}
+
+const sandboxComputerToolNameSet: ReadonlySet<string> = new Set(SANDBOX_COMPUTER_TOOL_NAMES);
+
+/** Names the bot settings disable list should offer for this deployment. */
+export function builtinToolsForDisableList(
+  computersAvailable: boolean,
+): readonly BuiltinToolName[] {
+  if (computersAvailable) return BUILTIN_TOOL_NAMES;
+  return BUILTIN_TOOL_NAMES.filter((name) => !sandboxComputerToolNameSet.has(name));
 }
 
 export function disabledBuiltinToolSet(names: readonly string[] | undefined): Set<string> {

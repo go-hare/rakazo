@@ -631,11 +631,13 @@ export default function BotSettingsScreen() {
                 />
               ) : null}
             </SettingsGroup>
-            <SettingsGroup label={t("Computer")}>
-              <View style={styles.cardContent}>
-                <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
-              </View>
-            </SettingsGroup>
+            {me?.sandboxProvider && me.sandboxProvider !== "none" ? (
+              <SettingsGroup label={t("Computer")}>
+                <View style={styles.cardContent}>
+                  <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
+                </View>
+              </SettingsGroup>
+            ) : null}
             <SettingsGroup label={t("Voice")}>
               <SettingsSwitch
                 label={t("Read replies aloud")}
