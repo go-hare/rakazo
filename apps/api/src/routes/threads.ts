@@ -4,10 +4,10 @@ import { settleCallRequest } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
+  BOT_COMPUTER_REQUIRED_SEND_ERROR,
   CALL_CLIENT_NONCE_PREFIX,
   callClientNonce,
   expandSkillReferencesInPrompt,
-  MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
@@ -113,7 +113,7 @@ export function threadsRoutes(ctx: RouterContext) {
   ) => {
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
-    // A bot with its own runnable model needs no main model, and stopping work needs none.
+    // Stopping work needs no computer. Everything else runs on the bound daemon.
     const replied =
       target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined;
     const stopping = target.kind === "bot" && isStopMessage(input);
@@ -125,7 +125,7 @@ export function threadsRoutes(ctx: RouterContext) {
       stopping ? "skip" : "reject",
     ));
     if (noModel && (target.kind !== "bot" || !isStopMessage(input))) {
-      throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+      throw new ORPCError("BAD_REQUEST", { message: BOT_COMPUTER_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {
       await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);

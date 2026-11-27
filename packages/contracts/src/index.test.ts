@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  builtinToolsForDisableList,
   CreateBotInput,
   CreateGroupInput,
   CreateRoutineInput,
@@ -546,5 +547,17 @@ it("retains legacy unknown-field stripping for model connections", () => {
   ).toEqual({
     provider: "test",
     apiKey: "fake-key",
+  });
+});
+
+describe("builtinToolsForDisableList", () => {
+  it("hides daemon MCP team tools from the settings disable list", () => {
+    for (const computersAvailable of [true, false]) {
+      const names = builtinToolsForDisableList(computersAvailable);
+      expect(names).not.toContain("message_bot");
+      expect(names).not.toContain("handoff_to_bot");
+      expect(names).toContain("web_search");
+      expect(names.includes("shell")).toBe(computersAvailable);
+    }
   });
 });

@@ -2024,13 +2024,13 @@ describe("a group member the message named nobody for", () => {
     expect(result.messages).toEqual([]);
   });
 
-  it("cannot hand off a message every member already received", async () => {
+  it("does not offer handoff_to_bot on the server executor", async () => {
     const offered = async (optional: boolean) =>
       (
         (await turn(optional, [text("NO_RESPONSE"), done])).runtimeRun.mock.calls[0]![0].tools ?? []
       ).map((tool: { name: string }) => tool.name);
     expect(await offered(true)).not.toContain("handoff_to_bot");
-    expect(await offered(false)).toContain("handoff_to_bot");
+    expect(await offered(false)).not.toContain("handoff_to_bot");
   });
 
   it("gets neither the guidance nor a silent ending when the message named it", async () => {

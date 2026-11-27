@@ -1,5 +1,5 @@
 import type { Actor } from "@rakazo/contracts";
-import { userErrorMessage } from "@rakazo/core";
+import { BOT_COMPUTER_REQUIRED_SEND_ERROR, userErrorMessage } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { botExecutionTarget, localOnboardingBot } from "./bot-execution-target.js";
@@ -46,10 +46,17 @@ describe("authoritative bot execution target", () => {
     );
   });
 
-  it("keeps unbound bots behind the model gate", async () => {
+  it("refuses unbound bots instead of falling back to the server executor", async () => {
     const { deps } = fixture(null);
-    await expect(botsCanRun(deps, actor, ["server-bot"], false)).resolves.toBe(false);
-    await expect(botsCanRun(deps, actor, ["server-bot"], true)).resolves.toBe(true);
+    await expect(botsCanRun(deps, actor, ["server-bot"], false)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: BOT_COMPUTER_REQUIRED_SEND_ERROR,
+    });
+    await expect(botsCanRun(deps, actor, ["server-bot"], true)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: BOT_COMPUTER_REQUIRED_SEND_ERROR,
+    });
+    await expect(botsCanRun(deps, actor, ["server-bot"], true, "skip")).resolves.toBe(false);
   });
 
   it("does not let a local recipient exempt a server recipient", async () => {
@@ -58,7 +65,12 @@ describe("authoritative bot execution target", () => {
       bot,
       { ...bot, id: "server-bot", daemonAssignment: null },
     ]);
-    await expect(botsCanRun(deps, actor, ["local-bot", "server-bot"], false)).resolves.toBe(false);
+    await expect(botsCanRun(deps, actor, ["local-bot", "server-bot"], false)).rejects.toMatchObject(
+      {
+        code: "BAD_REQUEST",
+        message: BOT_COMPUTER_REQUIRED_SEND_ERROR,
+      },
+    );
   });
 
   it("allows an empty recipient set without granting access to a bot", async () => {
@@ -120,7 +132,10 @@ describe("authoritative bot execution target", () => {
     const { deps, prisma, bot } = fixture();
     await expect(botsCanRun(deps, actor, [bot.id], false)).resolves.toBe(true);
     prisma.bot.findMany.mockResolvedValue([{ ...bot, daemonAssignment: null }]);
-    await expect(botsCanRun(deps, actor, [bot.id], false)).resolves.toBe(false);
+    await expect(botsCanRun(deps, actor, [bot.id], false)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: BOT_COMPUTER_REQUIRED_SEND_ERROR,
+    });
   });
 
   it("returns only an available own bot for onboarding", async () => {

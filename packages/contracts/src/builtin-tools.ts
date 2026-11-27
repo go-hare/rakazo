@@ -108,6 +108,9 @@ export const BUILTIN_TOOL_NAMES = [
   "message_agent",
 ] as const;
 
+/** Team messaging lives on the daemon MCP, not the server executor. */
+export const DAEMON_MCP_TEAM_TOOL_NAMES = ["message_bot", "handoff_to_bot"] as const;
+
 /** Tools that only exist on a sandbox computer, not the user's daemon machine. */
 export const SANDBOX_COMPUTER_TOOL_NAMES = [
   "computer_observe",
@@ -135,13 +138,17 @@ export function isBuiltinToolName(name: string): name is BuiltinToolName {
 }
 
 const sandboxComputerToolNameSet: ReadonlySet<string> = new Set(SANDBOX_COMPUTER_TOOL_NAMES);
+const daemonMcpTeamToolNameSet: ReadonlySet<string> = new Set(DAEMON_MCP_TEAM_TOOL_NAMES);
 
 /** Names the bot settings disable list should offer for this deployment. */
 export function builtinToolsForDisableList(
   computersAvailable: boolean,
 ): readonly BuiltinToolName[] {
-  if (computersAvailable) return BUILTIN_TOOL_NAMES;
-  return BUILTIN_TOOL_NAMES.filter((name) => !sandboxComputerToolNameSet.has(name));
+  return BUILTIN_TOOL_NAMES.filter(
+    (name) =>
+      !daemonMcpTeamToolNameSet.has(name) &&
+      (computersAvailable || !sandboxComputerToolNameSet.has(name)),
+  );
 }
 
 export function disabledBuiltinToolSet(names: readonly string[] | undefined): Set<string> {

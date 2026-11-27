@@ -1,3 +1,4 @@
+import { BOT_COMPUTER_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type * as DbModule from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -135,6 +136,22 @@ describe("execution start timing", () => {
     });
     expect(prisma.attempt.create).toHaveBeenCalledBefore(run);
     expect(leases.release).toHaveBeenCalledWith(prisma, lease);
+  });
+
+  it("fails an unassigned turn instead of falling through to the server executor", async () => {
+    const run = vi.fn(async () => "unassigned" as const);
+    const { finalizeRun, enqueue, start } = fixture({ daemonRuns: { run } });
+    await start();
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        outcome: "failed",
+        error: BOT_COMPUTER_REQUIRED_SEND_ERROR,
+      }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("fails an uncertain machine turn without retrying setup", async () => {

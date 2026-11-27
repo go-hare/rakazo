@@ -15,9 +15,9 @@ import {
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  BOT_COMPUTER_REQUIRED_SEND_ERROR,
   callIdFromClientNonce,
   isConversationalRun,
-  MODEL_REQUIRED_SEND_ERROR,
   memberMessageAlerts,
   mentionedGroupBotIds,
   messageBypassesTakeoverWait,
@@ -652,7 +652,7 @@ export async function sendThreadMessage(
         // A bare "stop" from the owner while work is active is the Stop button, not a reply.
         const stopping = activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
         if (input.noModel && !stopping) {
-          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+          throw new ORPCError("BAD_REQUEST", { message: BOT_COMPUTER_REQUIRED_SEND_ERROR });
         }
         const answered: typeof activeRuns = [];
         // Someone else's question stays on its card; this message starts the sender's own run.

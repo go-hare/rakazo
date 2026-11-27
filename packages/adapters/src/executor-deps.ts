@@ -91,7 +91,8 @@ export interface ExecutorDeps {
   /**
    * Executes assigned machine turns under the existing leases. Before sending, atomically
    * record the turn on the fenced run and persist its command. An unassigned result means
-   * no command was submitted; handled means the implementation finalized the fenced run.
+   * no command was submitted and the executor must fail the run, not fall through to the
+   * server model. Handled means the implementation finalized the fenced run.
    * Uncertain turns must be isolated and settled without re-execution, including after a
    * process crash, lost connection, or abort. Do not inject until recovery provides that.
    */

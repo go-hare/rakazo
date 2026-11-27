@@ -4,6 +4,7 @@ import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
+  BOT_COMPUTER_REQUIRED_SEND_ERROR,
   botMessageAllowsSilence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
@@ -496,7 +497,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
         deps.shutdownSignal?.addEventListener("abort", onShutdown);
         detachShutdown = () => deps.shutdownSignal?.removeEventListener("abort", onShutdown);
-        if (deps.daemonRuns && !backgroundHelper) {
+        if (deps.daemonRuns) {
           let result: "unassigned" | "handled";
           try {
             result = await deps.daemonRuns.run({
@@ -522,6 +523,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             return;
           }
           if (result === "handled") return;
+          await failRunBeforeTurn(
+            deps,
+            run,
+            "",
+            { attemptId: attempt.id, workerId, fence },
+            BOT_COMPUTER_REQUIRED_SEND_ERROR,
+          );
+          return;
         }
         // A saved computer turn owns both identities. Resolve them before consulting
         // today's main selection, whose connection may have changed while paused.

@@ -36,6 +36,7 @@ import {
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
 } from "@rakazo/contracts";
+import { BOT_COMPUTER_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -868,7 +869,7 @@ describe("model setup gate", () => {
     },
   );
 
-  it("refuses to start a run when no model is configured", async () => {
+  it("refuses to start a run when the bot is not on a computer", async () => {
     const { actor, handler } = modelGateDeps({ agentRuntime: "pi" });
 
     const response = await call(handler, actor, "threads/send", {
@@ -880,7 +881,7 @@ describe("model setup gate", () => {
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({
         code: "BAD_REQUEST",
-        message: "Connect a model to start a run.",
+        message: BOT_COMPUTER_REQUIRED_SEND_ERROR,
       }),
     });
   });

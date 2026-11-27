@@ -1,12 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import {
   deploymentModelRole,
-  findConnectedModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
   resolveMemberMainModel,
-  selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import {
@@ -15,6 +13,7 @@ import {
   canonicalPiProviderId,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
+import { BOT_COMPUTER_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import { isAdmin } from "../admins.js";
 import {
   botExecutionTarget,
@@ -147,7 +146,7 @@ export async function botsCanRun(
   deps: RouterDeps,
   actor: Actor,
   botIds: string[],
-  mainAvailable: boolean,
+  _mainAvailable: boolean,
   unavailable: "reject" | "skip" = "reject",
 ) {
   const bots = await deps.prisma.bot.findMany({
@@ -157,9 +156,6 @@ export async function botsCanRun(
       space: { memberships: { some: { userId: actor.userId } } },
     },
     select: {
-      modelProvider: true,
-      modelId: true,
-      thinkingLevel: true,
       daemonAssignment: daemonAssignmentSelection,
     },
   });
@@ -173,18 +169,9 @@ export async function botsCanRun(
           message: "Reconnect this bot's computer and try again.",
         });
       }
-      if (target === "local" || mainAvailable) return true;
-      const overrideCredential = bot.modelProvider
-        ? await findConnectedModelCredential(
-            deps.prisma,
-            deps.secrets,
-            actor,
-            bot.modelProvider,
-            bot.modelId,
-          )
-        : null;
-      return selectConfiguredModel({ override: bot, overrideCredential, main: null, defaults: {} })
-        .credential;
+      if (target === "local") return true;
+      if (unavailable === "skip") return false;
+      throw new ORPCError("BAD_REQUEST", { message: BOT_COMPUTER_REQUIRED_SEND_ERROR });
     }),
   );
   return credentials.every(Boolean);

@@ -47,6 +47,9 @@ export const MODEL_ACCESS_REQUIRED_RUN_ERROR = "Subscribe in Billing to keep run
 /** The API rejects a send with this message until the user can reach a model. */
 export const MODEL_REQUIRED_SEND_ERROR = "Connect a model to start a run.";
 
+/** The API rejects a send when the bot is not pinned to a live daemon computer. */
+export const BOT_COMPUTER_REQUIRED_SEND_ERROR = "Connect this bot to a computer and try again.";
+
 /** Only the structured server response enables explicit file confirmation. */
 export function isImageInputConfirmation(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;

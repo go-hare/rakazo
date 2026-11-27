@@ -1,4 +1,5 @@
 import {
+  DAEMON_MCP_TEAM_TOOL_NAMES,
   disabledBuiltinToolSet,
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
@@ -48,6 +49,8 @@ const PAID_SERVICE_TOOL_NAMES = new Set(["service_search", "service_call"]);
 
 /** Offered only to a user who connected a wallet. */
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
+
+const DAEMON_MCP_TEAM_TOOL_NAMES_SET: ReadonlySet<string> = new Set(DAEMON_MCP_TEAM_TOOL_NAMES);
 
 export const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
@@ -174,15 +177,11 @@ export function selectBuiltinToolsForRun(options: {
       (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
+      !DAEMON_MCP_TEAM_TOOL_NAMES_SET.has(tool.name) &&
       (!isBackgroundRunTrigger(options.trigger) ||
-        ![
-          "message_user",
-          "message_bot",
-          "handoff_to_bot",
-          "message_agent",
-          "generate_image",
-          "generate_video",
-        ].includes(tool.name)) &&
+        !["message_user", "message_agent", "generate_image", "generate_video"].includes(
+          tool.name,
+        )) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&

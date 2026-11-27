@@ -638,11 +638,12 @@ describe("run tool selection", () => {
     expect(disabled).toEqual(baseline.filter((name) => name !== "web_search"));
   });
 
-  it("offers group messaging to bots outside group threads", () => {
-    expect(toolNames("user")).toContain("handoff_to_bot");
-    for (const trigger of ["bot_message", "routine", "webhook", "follow_up"]) {
-      expect(toolNames(trigger)).toContain("handoff_to_bot");
-      expect(toolNames(trigger, "group-1")).toContain("handoff_to_bot");
+  it("does not offer daemon MCP team tools on the server executor", () => {
+    for (const trigger of ["user", "bot_message", "routine", "webhook", "follow_up"]) {
+      expect(toolNames(trigger)).not.toContain("message_bot");
+      expect(toolNames(trigger)).not.toContain("handoff_to_bot");
+      expect(toolNames(trigger, "group-1")).not.toContain("message_bot");
+      expect(toolNames(trigger, "group-1")).not.toContain("handoff_to_bot");
     }
     expect(
       selectBuiltinToolsForRun({
@@ -653,9 +654,7 @@ describe("run tool selection", () => {
         semanticMemoryEnabled: false,
         messagingChannelRun: false,
       }).map((tool) => tool.name),
-    ).toContain("handoff_to_bot");
-    expect(toolNames("user", "group-1")).not.toContain("message_bot");
-    expect(toolNames("user")).toContain("message_bot");
+    ).not.toEqual(expect.arrayContaining(["message_bot", "handoff_to_bot"]));
   });
 
   it("keeps schedule tools in group chats and offers creation to routines", () => {
