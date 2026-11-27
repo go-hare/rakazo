@@ -83,3 +83,25 @@ test("取消只认对话号和轮次号", () => {
     turnId: "u",
   });
 });
+
+test("云端团队动作结果原样带回本机", () => {
+  expect(
+    parseCloudFrame(
+      JSON.stringify({
+        type: "team_result",
+        threadId: "t",
+        turnId: "u",
+        requestId: "req",
+        ok: true,
+        text: '{"ok":true}',
+      }),
+    ),
+  ).toEqual({
+    type: "team_result",
+    threadId: "t",
+    turnId: "u",
+    requestId: "req",
+    ok: true,
+    text: '{"ok":true}',
+  });
+});

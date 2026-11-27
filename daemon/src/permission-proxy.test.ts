@@ -93,6 +93,29 @@ test("展示入口将产物描述符通过真实proxy交给broker", async () => 
   }
 });
 
+test("团队工具通过真实proxy交给broker并返回结果", async () => {
+  const received: Array<{ tool: string; input: Record<string, unknown> }> = [];
+  const broker = await openBroker(
+    () => {},
+    undefined,
+    async (tool, input) => {
+      received.push({ tool, input });
+      return { ok: true, message: JSON.stringify({ bots: [{ id: "b1", name: "Chief" }] }) };
+    },
+  );
+  try {
+    const reply = await callProxy(broker.socketPath, {
+      name: "list_fleet",
+      arguments: {},
+    });
+    expect(received).toEqual([{ tool: "list_fleet", input: {} }]);
+    expect(reply.result.content[0]?.text).toContain("Chief");
+    expect(reply.result).not.toHaveProperty("isError");
+  } finally {
+    broker.close();
+  }
+});
+
 test("文本问答通过真实proxy回传", async () => {
   const broker = await openBroker((ask) => {
     expect(ask.summary).toBe("做什么？");

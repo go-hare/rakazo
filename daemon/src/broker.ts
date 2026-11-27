@@ -30,9 +30,12 @@ interface Pending {
  * 跟服务端的 permission broker 一样：本机一个 socket，claude 的 MCP 代理连上来问。
  * 问出去的是 onAsk；窗口答完调 answer。
  */
+export type TeamToolResult = { ok: boolean; message: string };
+
 export async function openBroker(
   onAsk: (ask: BrokerAsk) => void,
   onPresent?: (itemId: string, presentation: Record<string, unknown>) => void,
+  onTeam?: (tool: string, input: Record<string, unknown>) => Promise<TeamToolResult>,
 ): Promise<Broker> {
   const dir = mkdtempSync(join(tmpdir(), "rakazo-perm-"));
   const socketPath =
@@ -40,7 +43,7 @@ export async function openBroker(
       ? `\\\\.\\pipe\\rakazo-perm-${process.pid}-${Date.now()}`
       : join(dir, "perm.sock");
   const pending = new Map<string, Pending>();
-  const server = createServer((conn) => accept(conn, pending, onAsk, onPresent));
+  const server = createServer((conn) => accept(conn, pending, onAsk, onPresent, onTeam));
   await new Promise<void>((resolve, reject) => {
     server.once("listening", () => resolve());
     server.once("error", reject);
@@ -91,6 +94,7 @@ function accept(
   pending: Map<string, Pending>,
   onAsk: (ask: BrokerAsk) => void,
   onPresent?: (itemId: string, presentation: Record<string, unknown>) => void,
+  onTeam?: (tool: string, input: Record<string, unknown>) => Promise<TeamToolResult>,
 ): void {
   const owned = new Set<string>();
   conn.setEncoding("utf8");
@@ -119,6 +123,31 @@ function accept(
             conn.write(
               `${JSON.stringify({ t: "answer", id: frame.id, behavior: "deny", message: "Presentation is unavailable" })}\n`,
             );
+          continue;
+        }
+        if (frame.t === "team" && typeof frame.id === "string" && typeof frame.tool === "string") {
+          const input =
+            frame.input && typeof frame.input === "object" && !Array.isArray(frame.input)
+              ? (frame.input as Record<string, unknown>)
+              : {};
+          void (async () => {
+            let result: TeamToolResult = { ok: false, message: "Team actions are unavailable" };
+            try {
+              if (onTeam) result = await onTeam(frame.tool, input);
+            } catch (error) {
+              result = {
+                ok: false,
+                message: error instanceof Error ? error.message : String(error),
+              };
+            }
+            try {
+              conn.write(
+                `${JSON.stringify({ t: "answer", id: frame.id, behavior: result.ok ? "answer" : "deny", message: result.message })}\n`,
+              );
+            } catch {
+              // 代理已经走了。
+            }
+          })();
           continue;
         }
       } catch {}

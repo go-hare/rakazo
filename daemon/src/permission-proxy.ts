@@ -127,7 +127,60 @@ const TOOLS = [
       required: ["question"],
     },
   },
+  {
+    name: "list_fleet",
+    description:
+      "List the user's other bots and groups with ids and names. Call this before message_bot or handoff_to_bot.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "message_bot",
+    description:
+      "Send a useful update, question, or result to another of the user's bots. Writing the message in your reply text does not deliver it. Delivery is async and does not end your turn.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bot_id: { type: "string", description: "Target bot id from list_fleet." },
+        confirm_name: {
+          type: "string",
+          description: "Exact name of the target bot when bot_id is omitted.",
+        },
+        message: { type: "string", description: "What to send." },
+        intent: {
+          type: "string",
+          enum: ["request", "result", "question", "status", "fyi"],
+          description: "What the recipient should do. Defaults to request.",
+        },
+      },
+      required: ["message"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "handoff_to_bot",
+    description:
+      "Transfer the next stage to another current group member. In a group, stay in that group. Outside a group, pass group_id from list_fleet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        group_id: {
+          type: "string",
+          description: "Required outside a group; omit in a group chat.",
+        },
+        bot_id: { type: "string", description: "Target member bot id." },
+        confirm_name: {
+          type: "string",
+          description: "Exact name of the target member when bot_id is omitted.",
+        },
+        message: { type: "string", description: "What the receiving bot should do next." },
+      },
+      required: ["message"],
+      additionalProperties: false,
+    },
+  },
 ];
+
+const TEAM_TOOLS = new Set(["list_fleet", "message_bot", "handoff_to_bot"]);
 
 const send = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
 
@@ -153,6 +206,23 @@ async function handle(message: Record<string, unknown>): Promise<void> {
       | { name?: string; arguments?: Record<string, unknown> }
       | undefined;
     const args = params?.arguments ?? {};
+    if (params?.name && TEAM_TOOLS.has(params.name)) {
+      const answer = await askBroker({
+        t: "team",
+        id: randomUUID(),
+        tool: params.name,
+        input: args,
+      });
+      send({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          content: [{ type: "text", text: answer.message || "Team action failed" }],
+          ...(answer.behavior === "deny" ? { isError: true } : {}),
+        },
+      });
+      return;
+    }
     if (params?.name === "present") {
       const answer = await askBroker({
         t: "present",

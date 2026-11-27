@@ -1,6 +1,13 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { AgentEmit } from "./agent.ts";
-import { answerTurn, cancelAllTurns, cancelTurn, runTurn, steerTurn } from "./agent.ts";
+import {
+  answerTurn,
+  cancelAllTurns,
+  cancelTurn,
+  completeTeam,
+  runTurn,
+  steerTurn,
+} from "./agent.ts";
 import type { DaemonConfig } from "./config.ts";
 import { leaseWatchdog } from "./lease-watchdog.ts";
 import type { DaemonFrame } from "./protocol.ts";
@@ -111,6 +118,10 @@ async function once(config: DaemonConfig, signal: AbortSignal): Promise<void> {
       }
       if (frame.type === "steer") {
         steerTurn(frame.threadId, frame.text);
+        return;
+      }
+      if (frame.type === "team_result") {
+        completeTeam(frame.threadId, frame.requestId, frame.ok, frame.text);
         return;
       }
       if (frame.commandId) send(socket, { type: "command_ack", commandId: frame.commandId });

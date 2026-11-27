@@ -23,6 +23,7 @@ import type {
   ImageFrame,
   LaunchOptions,
   PresentationFrame,
+  TeamFrame,
   ToolFrame,
   TurnImage,
   UsageFrame,
@@ -75,6 +76,7 @@ interface LiveAgent {
   emit: AgentEmit | null;
   stderr: string;
   lines: LineQueue;
+  team: Map<string, (result: { ok: boolean; text: string }) => void>;
 }
 
 const live = new Map<string, LiveAgent>();
@@ -88,7 +90,8 @@ export type AgentEmit = (
     | ToolFrame
     | UsageFrame
     | ImageFrame
-    | PresentationFrame,
+    | PresentationFrame
+    | TeamFrame,
 ) => void;
 
 /**
@@ -123,6 +126,10 @@ export async function runTurn(
       opening.opening = open(opening).finally(() => {
         opening.opening = null;
       });
+    }
+    for (const [id, finish] of agent.team) {
+      agent.team.delete(id);
+      finish({ ok: false, text: "Turn ended" });
     }
     agent.asks.clear();
     agent.emit = emit;
@@ -250,6 +257,7 @@ async function spawnAgent(turn: AgentTurn): Promise<LiveAgent> {
               presentation,
             });
           },
+          (tool, input) => requestTeam(turn.threadId, tool, input),
         );
   const plan = launchPlan(turn, saved, broker?.socketPath ?? null);
   let child: LiveAgent["process"];
@@ -292,7 +300,54 @@ async function spawnAgent(turn: AgentTurn): Promise<LiveAgent> {
     emit: null,
     stderr: "",
     lines: lineQueue(turn.agent),
+    team: new Map(),
   };
+}
+
+const TEAM_TIMEOUT_MS = 45_000;
+
+function requestTeam(
+  threadId: string,
+  tool: string,
+  input: Record<string, unknown>,
+): Promise<{ ok: boolean; message: string }> {
+  const agent = live.get(threadId);
+  if (!agent || agent.settled || !agent.emit) {
+    return Promise.resolve({ ok: false, message: "No active turn" });
+  }
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (!agent.team.delete(requestId)) return;
+      resolve({ ok: false, message: "Team action timed out" });
+    }, TEAM_TIMEOUT_MS);
+    agent.team.set(requestId, (result) => {
+      clearTimeout(timer);
+      resolve({ ok: result.ok, message: result.text });
+    });
+    agent.emit?.({
+      type: "team",
+      threadId: agent.threadId,
+      turnId: agent.turnId,
+      requestId,
+      tool,
+      input,
+    });
+  });
+}
+
+export function completeTeam(
+  threadId: string,
+  requestId: string,
+  ok: boolean,
+  text: string,
+): boolean {
+  const agent = live.get(threadId);
+  const pending = agent?.team.get(requestId);
+  if (!pending) return false;
+  agent.team.delete(requestId);
+  pending({ ok, text });
+  return true;
 }
 
 async function read(agent: LiveAgent, emit: AgentEmit): Promise<void> {
@@ -316,6 +371,10 @@ async function read(agent: LiveAgent, emit: AgentEmit): Promise<void> {
     }
   } finally {
     agent.lines.fail(new Error(`${agent.kind} 退出了`));
+    for (const [id, finish] of agent.team) {
+      agent.team.delete(id);
+      finish({ ok: false, text: `${agent.kind} 退出了` });
+    }
     agent.broker?.close();
     removeSystem(agent);
     if (live.get(agent.threadId) === agent) {
@@ -557,6 +616,10 @@ function killTree(pid: number | undefined): void {
 
 function retire(agent: LiveAgent): void {
   agent.settled = true;
+  for (const [id, finish] of agent.team) {
+    agent.team.delete(id);
+    finish({ ok: false, text: "Turn ended" });
+  }
   if (live.get(agent.threadId) === agent) live.delete(agent.threadId);
   killTree(agent.process.pid);
   agent.broker?.close();

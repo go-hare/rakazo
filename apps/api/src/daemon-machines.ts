@@ -10,6 +10,7 @@ import { createLiveDaemonAsk, finalizeRun, runAsSystem, runAsTenant } from "@rak
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { createDaemonPresentation } from "./daemon-presentation.js";
+import { handleDaemonTeam } from "./daemon-team.js";
 
 const LEASE_OWNER = "daemon";
 
@@ -18,6 +19,7 @@ export function startDaemonMachines(
   prisma: PrismaClient,
   events: Pick<ThreadEvents, "append" | "notify">,
   artifacts?: ArtifactStore,
+  jobs?: JobPublisher,
 ) {
   void dataDir;
   const turns = new Map<
@@ -56,6 +58,16 @@ export function startDaemonMachines(
       const turnId = typeof frame.turnId === "string" ? frame.turnId : "";
       const machineId = typeof frame.machineId === "string" ? frame.machineId : "";
       if (!threadId || !turnId) return;
+      if (frame.type === "team") {
+        await handleDaemonTeam({
+          prisma,
+          events,
+          jobs,
+          push: (id, payload) => machines.push(id, payload),
+          frame,
+        });
+        return;
+      }
       const turn: NonNullable<ReturnType<typeof turns.get>> = turns.get(turnId) ?? {
         text: "",
         tools: new Map(),

@@ -65,6 +65,7 @@ export interface MachineHub {
     userId: string,
   ): Promise<Record<string, { machineId: string; cwd: string; agent?: string }>>;
   online(machineId: string): Promise<boolean>;
+  push(machineId: string, frame: Record<string, unknown>): boolean;
   send(machineId: string, spaceId: string, turn: MachineTurn): Promise<void>;
   cancel(machineId: string, threadId: string, turnId: string): Promise<boolean>;
   text(turnId: string): Turn | null;
@@ -362,6 +363,12 @@ const result = await response.json(); if (result.callback) location.href = resul
         select: { leaseExpiresAt: true },
       });
       return !!machine?.leaseExpiresAt && machine.leaseExpiresAt.getTime() > Date.now();
+    },
+    push(machineId, frame) {
+      const client = live.get(machineId);
+      if (!client || client.socket.readyState !== client.socket.OPEN) return false;
+      client.socket.send(JSON.stringify(frame));
+      return true;
     },
     async send(machineId, spaceId, turn) {
       await store.enqueue({

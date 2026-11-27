@@ -390,7 +390,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       runs!,
     );
   const artifacts = createArtifactStore(env.dataDir, prisma);
-  const daemonMachines = startDaemonMachines(env.dataDir, prisma, events, artifacts);
+  const daemonMachines = startDaemonMachines(env.dataDir, prisma, events, artifacts, jobs);
   bindDaemonMachines(daemonMachines);
   attachDaemonRuns(jobs, prisma, daemonMachines, events);
   const ticketChanges = createTicketChangeNotifier({

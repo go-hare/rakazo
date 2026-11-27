@@ -83,7 +83,16 @@ export interface CancelFrame {
   turnId: string;
 }
 
-export type CloudFrame = TurnFrame | CancelFrame | AnswerFrame | SteerFrame;
+export interface TeamResultFrame {
+  type: "team_result";
+  threadId: string;
+  turnId: string;
+  requestId: string;
+  ok: boolean;
+  text: string;
+}
+
+export type CloudFrame = TurnFrame | CancelFrame | AnswerFrame | SteerFrame | TeamResultFrame;
 
 /** 本机发给云端。 */
 export interface HelloFrame {
@@ -170,8 +179,18 @@ export interface PresentationFrame {
   presentation: Record<string, unknown>;
 }
 
+export interface TeamFrame {
+  type: "team";
+  threadId: string;
+  turnId: string;
+  requestId: string;
+  tool: string;
+  input: Record<string, unknown>;
+}
+
 export type DaemonFrame =
   | PresentationFrame
+  | TeamFrame
   | HelloFrame
   | DeltaFrame
   | DoneFrame
@@ -285,6 +304,20 @@ export function parseCloudFrame(raw: string): CloudFrame | null {
       ...command,
       threadId: String(frame.threadId),
       turnId: String(frame.turnId),
+    };
+  }
+  if (
+    frame.type === "team_result" &&
+    strings(frame, ["threadId", "turnId", "requestId", "text"]) &&
+    typeof frame.ok === "boolean"
+  ) {
+    return {
+      type: "team_result",
+      threadId: String(frame.threadId),
+      turnId: String(frame.turnId),
+      requestId: String(frame.requestId),
+      ok: frame.ok,
+      text: String(frame.text),
     };
   }
   return null;
